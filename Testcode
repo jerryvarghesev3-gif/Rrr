@@ -1,0 +1,106 @@
+package com.connect.connection
+
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import android.os.Bundle
+import android.view.View
+import android.widget.Button
+import android.widget.TextView
+import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
+import com.google.zxing.BarcodeFormat
+import com.journeyapps.barcodescanner.*
+
+class QRAActivity : ComponentActivity() {
+
+    private lateinit var barcodeView: DecoratedBarcodeView
+    private lateinit var txtInfo: TextView
+    private lateinit var btnContinue: Button
+    private lateinit var btnCancel: Button
+    private lateinit var btnRescan: Button
+
+    private lateinit var gatewayId: String
+    private var bedId: String? = null
+    private var captured = false
+
+    private val callback = BarcodeCallback { result ->
+        if (captured) return@BarcodeCallback
+        val text = result.text?.trim().orEmpty()
+        if (text.isNotEmpty()) {
+            captured = true
+            bedId = text
+            txtInfo.text = "bedId: $text"
+            btnContinue.isEnabled = true
+            barcodeView.pause()
+        }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_qra)
+
+        gatewayId = intent.getStringExtra("gatewayId") ?: ""
+
+        barcodeView = findViewById(R.id.barcode_scanner_a)
+        txtInfo     = findViewById(R.id.qrTextA)
+        btnContinue = findViewById(R.id.btnContinueA)
+        btnCancel   = findViewById(R.id.btnCancelA)
+        btnRescan   = findViewById(R.id.btnRescanA)
+
+        barcodeView.decoderFactory = DefaultDecoderFactory(listOf(BarcodeFormat.QR_CODE))
+        btnContinue.isEnabled = false
+
+        btnRescan.setOnClickListener {
+            captured = false
+            bedId = null
+            txtInfo.text = "Aim at bedId QR"
+            barcodeView.resume()
+            barcodeView.decodeContinuous(callback)
+        }
+        btnCancel.setOnClickListener { finish() }
+        btnContinue.setOnClickListener {
+            if (bedId == null) {
+                Toast.makeText(this, "Scan bedId first", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            startActivity(
+                android.content.Intent(this, QRBActivity::class.java)
+                    .putExtra("gatewayId", gatewayId)
+                    .putExtra("bedId", bedId)
+            )
+            finish()
+        }
+
+        ensureCameraThenStart()
+    }
+
+    private fun ensureCameraThenStart() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
+            != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CAMERA), 2001)
+        } else startCamera()
+    }
+
+    private fun startCamera() {
+        txtInfo.text = "Aim at bedId QR"
+        barcodeView.visibility = View.VISIBLE
+        barcodeView.resume()
+        barcodeView.decodeContinuous(callback)
+    }
+
+    override fun onRequestPermissionsResult(code: Int, perms: Array<out String>, res: IntArray) {
+        if (code == 2001 && res.isNotEmpty() && res[0] == PackageManager.PERMISSION_GRANTED) startCamera()
+        else Toast.makeText(this, "Camera permission required", Toast.LENGTH_LONG).show()
+    }
+
+    override fun onResume() { super.onResume(); if (!captured) barcodeView.resume() }
+    override fun onPause()  { super.onPause(); barcodeView.pause() }
+}
+
+
+
+
