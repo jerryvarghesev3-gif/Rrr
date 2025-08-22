@@ -103,4 +103,218 @@ class QRAActivity : ComponentActivity() {
 
 
 
+package com.connect.connection
+
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import android.os.Bundle
+import android.view.View
+import android.widget.Button
+import android.widget.TextView
+import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
+import com.google.zxing.BarcodeFormat
+import com.journeyapps.barcodescanner.*
+import org.eclipse.paho.client.mqttv3.*
+import org.json.JSONObject
+import java.util.concurrent.atomic.AtomicInteger
+
+class QRBActivity : ComponentActivity() {
+
+    private lateinit var barcodeView: DecoratedBarcodeView
+    private lateinit var txtInfo: TextView
+    private lateinit var btnAdd: Button
+    private lateinit var btnCancel: Button
+    private lateinit var btnRescan: Button
+
+    private lateinit var gatewayId: String
+    private lateinit var bedId: String
+    private var locationId: String? = null
+    private var captured = false
+
+    private fun topicSetLocationReq(gw: String) =
+        "2.0/aa/bb/gateway/$gw/command/set_location/request"
+    private fun topicSetLocationResp(bed: String) =
+        "2.0/aa/bb/cc/$bed/command/set_location/response"
+
+    private val txnGen = AtomicInteger(200)
+    private var lastTxnSetLoc = -1
+
+    private val callback = BarcodeCallback { result ->
+        if (captured) return@BarcodeCallback
+        val text = result.text?.trim().orEmpty()
+        if (text.isNotEmpty()) {
+            captured = true
+            locationId = text
+            txtInfo.text = "locationId: $text"
+            btnAdd.isEnabled = true
+            barcodeView.pause()
+        }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_qrb)
+
+        gatewayId = intent.getStringExtra("gatewayId") ?: ""
+        bedId     = intent.getStringExtra("bedId") ?: ""
+
+        barcodeView = findViewById(R.id.barcode_scanner_b)
+        txtInfo     = findViewById(R.id.qrTextB)
+        btnAdd      = findViewById(R.id.btnAddB)
+        btnCancel   = findViewById(R.id.btnCancelB)
+        btnRescan   = findViewById(R.id.btnRescanB)
+
+        barcodeView.decoderFactory = DefaultDecoderFactory(listOf(BarcodeFormat.QR_CODE))
+        btnAdd.isEnabled = false
+
+        btnRescan.setOnClickListener {
+            captured = false
+            locationId = null
+            txtInfo.text = "Aim at locationId QR"
+            barcodeView.resume()
+            barcodeView.decodeContinuous(callback)
+        }
+        btnCancel.setOnClickListener { finish() }
+        btnAdd.setOnClickListener { sendSetLocation() }
+
+        ensureCameraThenStart()
+
+        // Subscribe and handle responses for this screen
+        val client = MqttHolder.readyClientOrNull()
+        if (client == null) {
+            Toast.makeText(this, "MQTT not ready", Toast.LENGTH_LONG).show()
+            finish(); return
+        }
+        client.subscribe(topicSetLocationResp(bedId), 1, null, object : IMqttActionListener {
+            override fun onSuccess(asyncActionToken: IMqttToken?) {}
+            override fun onFailure(asyncActionToken: IMqttToken?, exception: Throwable?) {
+                Toast.makeText(this@QRBActivity, "Subscribe failed: ${exception?.message}", Toast.LENGTH_SHORT).show()
+            }
+        })
+        client.setCallback(object : MqttCallbackExtended {
+            override fun connectComplete(reconnect: Boolean, serverURI: String?) {}
+            override fun connectionLost(cause: Throwable?) {}
+            override fun deliveryComplete(token: IMqttDeliveryToken?) {}
+            override fun messageArrived(topic: String?, message: MqttMessage?) {
+                if (topic == topicSetLocationResp(bedId)) onSetLocationResp(message?.toString().orEmpty())
+            }
+        })
+    }
+
+    private fun ensureCameraThenStart() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
+            != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CAMERA), 2002)
+        } else startCamera()
+    }
+
+    private fun startCamera() {
+        txtInfo.text = "Aim at locationId QR"
+        barcodeView.visibility = View.VISIBLE
+        barcodeView.resume()
+        barcodeView.decodeContinuous(callback)
+    }
+
+    override fun onRequestPermissionsResult(code: Int, perms: Array<out String>, res: IntArray) {
+        if (code == 2002 && res.isNotEmpty() && res[0] == PackageManager.PERMISSION_GRANTED) startCamera()
+        else Toast.makeText(this, "Camera permission required", Toast.LENGTH_LONG).show()
+    }
+
+    override fun onResume() { super.onResume(); if (!captured) barcodeView.resume() }
+    override fun onPause()  { super.onPause(); barcodeView.pause() }
+
+    private fun sendSetLocation() {
+        val loc = locationId ?: run {
+            Toast.makeText(this, "Scan locationId first", Toast.LENGTH_SHORT).show(); return
+        }
+        val client = MqttHolder.readyClientOrNull()
+        if (client == null) { Toast.makeText(this, "Not connected", Toast.LENGTH_SHORT).show(); return }
+
+        lastTxnSetLoc = txnGen.incrementAndGet()
+
+        val data = JSONObject()
+            .put("bb_id", bedId)
+            .put("force", false)
+            .put("location_id", loc)
+
+        val req = JSONObject()
+            .put("command_id", "set_location")
+            .put("data", data)
+            .put("reply_to", topicSetLocationResp(bedId))
+            .put("transaction_id", lastTxnSetLoc)
+
+        val msg = MqttMessage(req.toString().toByteArray(Charsets.UTF_8)).apply { qos = 1 }
+        client.publish(topicSetLocationReq(gatewayId), msg, null, object : IMqttActionListener {
+            override fun onSuccess(asyncActionToken: IMqttToken?) {
+                txtInfo.text = "Sent set_location (tx=$lastTxnSetLoc)…"
+            }
+            override fun onFailure(asyncActionToken: IMqttToken?, exception: Throwable?) {
+                Toast.makeText(this@QRBActivity, "Publish failed: ${exception?.message}", Toast.LENGTH_SHORT).show()
+            }
+        })
+    }
+
+    private fun onSetLocationResp(json: String) {
+        try {
+            val obj = JSONObject(json)
+            val tx = obj.optInt("transaction_id", -1)
+            if (tx != lastTxnSetLoc) return
+
+            val status = obj.optInt("status", -1)
+            val resultLoc = obj.optJSONObject("data")
+                ?.optJSONObject("location")
+                ?.optString("id") ?: locationId.orEmpty()
+
+            startActivity(
+                android.content.Intent(this, SummaryActivity::class.java)
+                    .putExtra("status", status)
+                    .putExtra("gatewayId", gatewayId)
+                    .putExtra("bedId", bedId)
+                    .putExtra("locationId", resultLoc)
+            )
+            finish()
+        } catch (t: Throwable) {
+            Toast.makeText(this, "Bad response: ${t.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+}
+
+
+
+package com.connect.connection
+
+import android.os.Bundle
+import android.widget.TextView
+import androidx.activity.ComponentActivity
+
+class SummaryActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_summary)
+
+        val status = intent.getIntExtra("status", -1)
+        val gatewayId = intent.getStringExtra("gatewayId") ?: ""
+        val bedId = intent.getStringExtra("bedId") ?: ""
+        val locationId = intent.getStringExtra("locationId") ?: ""
+
+        findViewById<TextView>(R.id.sumText).text = buildString {
+            appendLine(if (status == 0) "✅ Location set OK" else "❌ set_location failed (status=$status)")
+            appendLine("Gateway: $gatewayId")
+            appendLine("Bed ID: $bedId")
+            appendLine("Location ID: $locationId")
+        }
+    }
+
+
+
+
+
+
+
+
 
