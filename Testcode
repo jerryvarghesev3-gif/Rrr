@@ -312,7 +312,126 @@ class SummaryActivity : ComponentActivity() {
 
 
 
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="vertical" android:padding="24dp"
+    android:layout_width="match_parent" android:layout_height="match_parent">
 
+    <TextView
+        android:id="@+id/statusText"
+        android:text="Status"
+        android:textSize="16sp"
+        android:layout_width="match_parent" android:layout_height="wrap_content"/>
+
+    <Button
+        android:id="@+id/connectButton"
+        android:text="CONNECT TO MQTT"
+        android:layout_width="match_parent" android:layout_height="wrap_content"/>
+</LinearLayout>
+
+
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="vertical" android:padding="12dp"
+    android:layout_width="match_parent" android:layout_height="match_parent">
+
+    <com.journeyapps.barcodescanner.DecoratedBarcodeView
+        android:id="@+id/barcode_scanner_a"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"/>
+
+    <TextView
+        android:id="@+id/qrTextA"
+        android:text="Aim at bedId QR"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:padding="12dp"/>
+
+    <LinearLayout
+        android:orientation="horizontal"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <Button
+            android:id="@+id/btnRescanA"
+            android:text="RESCAN"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"/>
+
+        <Button
+            android:id="@+id/btnContinueA"
+            android:text="CONTINUE"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"/>
+
+        <Button
+            android:id="@+id/btnCancelA"
+            android:text="CANCEL"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"/>
+    </LinearLayout>
+</LinearLayout>
+
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="vertical" android:padding="12dp"
+    android:layout_width="match_parent" android:layout_height="match_parent">
+
+    <com.journeyapps.barcodescanner.DecoratedBarcodeView
+        android:id="@+id/barcode_scanner_b"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"/>
+
+    <TextView
+        android:id="@+id/qrTextB"
+        android:text="Aim at locationId QR"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:padding="12dp"/>
+
+    <LinearLayout
+        android:orientation="horizontal"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <Button
+            android:id="@+id/btnRescanB"
+            android:text="RESCAN"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"/>
+
+        <Button
+            android:id="@+id/btnAddB"
+            android:text="ADD (Set Location)"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"/>
+
+        <Button
+            android:id="@+id/btnCancelB"
+            android:text="CANCEL"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"/>
+    </LinearLayout>
+</LinearLayout>
+
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="vertical" android:padding="24dp"
+    android:layout_width="match_parent" android:layout_height="match_parent">
+    <TextView
+        android:id="@+id/sumText"
+        android:textSize="16sp"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"/>
+</LinearLayout>
 
 
 
