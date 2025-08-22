@@ -842,3 +842,80 @@ class QRBActivity : ComponentActivity() {
 
 
 
+
+
+
+
+private fun startCamera() {
+    val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
+    cameraProviderFuture.addListener({
+        val provider = cameraProviderFuture.get()
+
+        val preview = Preview.Builder().build().also {
+            it.setSurfaceProvider(previewView.surfaceProvider)
+        }
+        val selector = CameraSelector.DEFAULT_BACK_CAMERA
+
+        val analysis = ImageAnalysis.Builder()
+            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+            .build().also { imageAnalysis ->
+                imageAnalysis.setAnalyzer(
+                    ContextCompat.getMainExecutor(this),
+                    BarcodeAnalyzer { text: String ->
+                        if (scanning) {
+                            scanning = false
+                            bedId = text.trim()
+                            txtInfo.text = "bedId: $bedId"
+                            btnContinue.isEnabled = true
+                        }
+                    }
+                )
+            }
+
+        provider.unbindAll()
+        provider.bindToLifecycle(this, selector, preview, analysis)
+        previewView.visibility = View.VISIBLE
+        txtInfo.text = "Aim at bedId QR"
+    }, ContextCompat.getMainExecutor(this)) // <— executor for addListener
+}
+
+
+private fun startCamera() {
+    val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
+    cameraProviderFuture.addListener({
+        val provider = cameraProviderFuture.get()
+
+        val preview = Preview.Builder().build().also {
+            it.setSurfaceProvider(previewView.surfaceProvider)
+        }
+        val selector = CameraSelector.DEFAULT_BACK_CAMERA
+
+        val analysis = ImageAnalysis.Builder()
+            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+            .build().also { imageAnalysis ->
+                imageAnalysis.setAnalyzer(
+                    ContextCompat.getMainExecutor(this),
+                    BarcodeAnalyzer { text: String ->
+                        if (scanning) {
+                            scanning = false
+                            locationId = text.trim()
+                            txtInfo.text = "locationId: $locationId"
+                            btnAdd.isEnabled = true
+                        }
+                    }
+                )
+            }
+
+        provider.unbindAll()
+        provider.bindToLifecycle(this, selector, preview, analysis)
+        previewView.visibility = View.VISIBLE
+        txtInfo.text = "Aim at locationId QR"
+    }, ContextCompat.getMainExecutor(this))
+}
+
+
+
+
+
+
+
