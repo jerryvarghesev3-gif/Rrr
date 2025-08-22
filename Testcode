@@ -436,4 +436,409 @@ class SummaryActivity : ComponentActivity() {
 
 
 
+package com.connect.connection
+
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import android.os.Bundle
+import android.view.View
+import android.widget.Button
+import android.widget.TextView
+import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.LifecycleOwner
+import androidx.camera.view.PreviewView
+
+class QRAActivity : ComponentActivity() {
+
+    private lateinit var previewView: PreviewView
+    private lateinit var txtInfo: TextView
+    private lateinit var btnContinue: Button
+    private lateinit var btnCancel: Button
+    private lateinit var btnRescan: Button
+
+    private lateinit var gatewayId: String
+    private var bedId: String? = null
+    private var scanning = true
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_qra)
+
+        gatewayId  = intent.getStringExtra("gatewayId") ?: ""
+
+        previewView = findViewById(R.id.previewViewA)
+        txtInfo     = findViewById(R.id.qrTextA)
+        btnContinue = findViewById(R.id.btnContinueA)
+        btnCancel   = findViewById(R.id.btnCancelA)
+        btnRescan   = findViewById(R.id.btnRescanA)
+
+        btnContinue.isEnabled = false
+        btnCancel.setOnClickListener { finish() }
+        btnRescan.setOnClickListener {
+            bedId = null
+            txtInfo.text = "Aim at bedId QR"
+            scanning = true
+        }
+        btnContinue.setOnClickListener {
+            if (bedId == null) {
+                Toast.makeText(this, "Scan bedId first", Toast.LENGTH_SHORT).show(); return@setOnClickListener
+            }
+            startActivity(
+                android.content.Intent(this, QRBActivity::class.java)
+                    .putExtra("gatewayId", gatewayId)
+                    .putExtra("bedId", bedId)
+            )
+            finish()
+        }
+
+        ensureCameraThenStart()
+    }
+
+    private fun ensureCameraThenStart() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
+            != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CAMERA), 3001)
+        } else startCamera()
+    }
+
+    private fun startCamera() {
+        val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
+        cameraProviderFuture.addListener({
+            val provider = cameraProviderFuture.get()
+
+            val preview = Preview.Builder().build().also {
+                it.setSurfaceProvider(previewView.surfaceProvider)
+            }
+            val selector = CameraSelector.DEFAULT_BACK_CAMERA
+
+            val analysis = ImageAnalysis.Builder()
+                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .build().also { imageAnalysis ->
+                    imageAnalysis.setAnalyzer(ContextCompat.getMainExecutor(this),
+                        BarcodeAnalyzer { text ->
+                            if (scanning) {
+                                scanning = false
+                                bedId = text.trim()
+                                txtInfo.text = "bedId: $bedId"
+                                btnContinue.isEnabled = true
+                            }
+                        })
+                }
+
+            provider.unbindAll()
+            provider.bindToLifecycle(this as LifecycleOwner, selector, preview, analysis)
+            previewView.visibility = View.VISIBLE
+            txtInfo.text = "Aim at bedId QR"
+        }, ContextCompat.getMainExecutor(this))
+    }
+
+    override fun onRequestPermissionsResult(code: Int, perms: Array<out String>, res: IntArray) {
+        if (code == 3001 && res.isNotEmpty() && res[0] == PackageManager.PERMISSION_GRANTED) startCamera()
+        else Toast.makeText(this, "Camera permission required", Toast.LENGTH_LONG).show()
+    }
+}
+
+
+
+
+package com.connect.connection
+
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import android.os.Bundle
+import android.view.View
+import android.widget.Button
+import android.widget.TextView
+import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.LifecycleOwner
+import androidx.camera.view.PreviewView
+import org.eclipse.paho.client.mqttv3.*
+import org.json.JSONObject
+import java.util.concurrent.atomic.AtomicInteger
+
+class QRBActivity : ComponentActivity() {
+
+    private lateinit var previewView: PreviewView
+    private lateinit var txtInfo: TextView
+    private lateinit var btnAdd: Button
+    private lateinit var btnCancel: Button
+    private lateinit var btnRescan: Button
+
+    private lateinit var gatewayId: String
+    private lateinit var bedId: String
+    private var locationId: String? = null
+    private var scanning = true
+
+    private fun topicSetLocationReq(gw: String) =
+        "2.0/aa/bb/gateway/$gw/command/set_location/request"
+    private fun topicSetLocationResp(bed: String) =
+        "2.0/aa/bb/cc/$bed/command/set_location/response"
+
+    private val txnGen = AtomicInteger(200)
+    private var lastTxnSetLoc = -1
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_qrb)
+
+        gatewayId = intent.getStringExtra("gatewayId") ?: ""
+        bedId     = intent.getStringExtra("bedId") ?: ""
+
+        previewView = findViewById(R.id.previewViewB)
+        txtInfo     = findViewById(R.id.qrTextB)
+        btnAdd      = findViewById(R.id.btnAddB)
+        btnCancel   = findViewById(R.id.btnCancelB)
+        btnRescan   = findViewById(R.id.btnRescanB)
+
+        btnAdd.isEnabled = false
+
+        btnCancel.setOnClickListener { finish() }
+        btnRescan.setOnClickListener {
+            locationId = null
+            txtInfo.text = "Aim at locationId QR"
+            scanning = true
+        }
+        btnAdd.setOnClickListener { sendSetLocation() }
+
+        ensureCameraThenStart()
+
+        // MQTT subscribe for response
+        val client = MqttHolder.readyClientOrNull()
+        if (client == null) {
+            Toast.makeText(this, "MQTT not ready", Toast.LENGTH_LONG).show()
+            finish(); return
+        }
+        client.subscribe(topicSetLocationResp(bedId), 1, null, object : IMqttActionListener {
+            override fun onSuccess(asyncActionToken: IMqttToken?) {}
+            override fun onFailure(asyncActionToken: IMqttToken?, exception: Throwable?) {
+                Toast.makeText(this@QRBActivity, "Subscribe failed: ${exception?.message}", Toast.LENGTH_SHORT).show()
+            }
+        })
+        client.setCallback(object : MqttCallbackExtended {
+            override fun connectComplete(reconnect: Boolean, serverURI: String?) {}
+            override fun connectionLost(cause: Throwable?) {}
+            override fun deliveryComplete(token: IMqttDeliveryToken?) {}
+            override fun messageArrived(topic: String?, message: MqttMessage?) {
+                if (topic == topicSetLocationResp(bedId)) onSetLocationResp(message?.toString().orEmpty())
+            }
+        })
+    }
+
+    private fun ensureCameraThenStart() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
+            != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CAMERA), 3002)
+        } else startCamera()
+    }
+
+    private fun startCamera() {
+        val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
+        cameraProviderFuture.addListener({
+            val provider = cameraProviderFuture.get()
+
+            val preview = Preview.Builder().build().also {
+                it.setSurfaceProvider(previewView.surfaceProvider)
+            }
+            val selector = CameraSelector.DEFAULT_BACK_CAMERA
+
+            val analysis = ImageAnalysis.Builder()
+                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .build().also { imageAnalysis ->
+                    imageAnalysis.setAnalyzer(ContextCompat.getMainExecutor(this),
+                        BarcodeAnalyzer { text ->
+                            if (scanning) {
+                                scanning = false
+                                locationId = text.trim()
+                                txtInfo.text = "locationId: $locationId"
+                                btnAdd.isEnabled = true
+                            }
+                        })
+                }
+
+            provider.unbindAll()
+            provider.bindToLifecycle(this as LifecycleOwner, selector, preview, analysis)
+            previewView.visibility = View.VISIBLE
+            txtInfo.text = "Aim at locationId QR"
+        }, ContextCompat.getMainExecutor(this))
+    }
+
+    override fun onRequestPermissionsResult(code: Int, perms: Array<out String>, res: IntArray) {
+        if (code == 3002 && res.isNotEmpty() && res[0] == PackageManager.PERMISSION_GRANTED) startCamera()
+        else Toast.makeText(this, "Camera permission required", Toast.LENGTH_LONG).show()
+    }
+
+    private fun sendSetLocation() {
+        val loc = locationId ?: run {
+            Toast.makeText(this, "Scan locationId first", Toast.LENGTH_SHORT).show(); return
+        }
+        val client = MqttHolder.readyClientOrNull()
+        if (client == null) { Toast.makeText(this, "Not connected", Toast.LENGTH_SHORT).show(); return }
+
+        lastTxnSetLoc = txnGen.incrementAndGet()
+
+        val data = JSONObject()
+            .put("bb_id", bedId)
+            .put("force", false)
+            .put("location_id", loc)
+
+        val req = JSONObject()
+            .put("command_id", "set_location")
+            .put("data", data)
+            .put("reply_to", topicSetLocationResp(bedId))
+            .put("transaction_id", lastTxnSetLoc)
+
+        val msg = MqttMessage(req.toString().toByteArray(Charsets.UTF_8)).apply { qos = 1 }
+        client.publish(topicSetLocationReq(gatewayId), msg, null, object : IMqttActionListener {
+            override fun onSuccess(asyncActionToken: IMqttToken?) {
+                txtInfo.text = "Sent set_location (tx=$lastTxnSetLoc)…"
+            }
+            override fun onFailure(asyncActionToken: IMqttToken?, exception: Throwable?) {
+                Toast.makeText(this@QRBActivity, "Publish failed: ${exception?.message}", Toast.LENGTH_SHORT).show()
+            }
+        })
+    }
+
+    private fun onSetLocationResp(json: String) {
+        try {
+            val obj = org.json.JSONObject(json)
+            val tx = obj.optInt("transaction_id", -1)
+            if (tx != lastTxnSetLoc) return
+
+            val status = obj.optInt("status", -1)
+            val resultLoc = obj.optJSONObject("data")
+                ?.optJSONObject("location")
+                ?.optString("id") ?: locationId.orEmpty()
+
+            startActivity(
+                android.content.Intent(this, SummaryActivity::class.java)
+                    .putExtra("status", status)
+                    .putExtra("gatewayId", gatewayId)
+                    .putExtra("bedId", bedId)
+                    .putExtra("locationId", resultLoc)
+            )
+            finish()
+        } catch (t: Throwable) {
+            Toast.makeText(this, "Bad response: ${t.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+}
+
+
+
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="vertical" android:padding="12dp"
+    android:layout_width="match_parent" android:layout_height="match_parent">
+
+    <androidx.camera.view.PreviewView
+        android:id="@+id/previewViewA"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"/>
+
+    <TextView
+        android:id="@+id/qrTextA"
+        android:text="Aim at bedId QR"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:padding="12dp"/>
+
+    <LinearLayout
+        android:orientation="horizontal"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <Button
+            android:id="@+id/btnRescanA"
+            android:text="RESCAN"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"/>
+
+        <Button
+            android:id="@+id/btnContinueA"
+            android:text="CONTINUE"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"/>
+
+        <Button
+            android:id="@+id/btnCancelA"
+            android:text="CANCEL"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"/>
+    </LinearLayout>
+</LinearLayout>
+
+
+
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="vertical" android:padding="12dp"
+    android:layout_width="match_parent" android:layout_height="match_parent">
+
+    <androidx.camera.view.PreviewView
+        android:id="@+id/previewViewB"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"/>
+
+    <TextView
+        android:id="@+id/qrTextB"
+        android:text="Aim at locationId QR"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:padding="12dp"/>
+
+    <LinearLayout
+        android:orientation="horizontal"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <Button
+            android:id="@+id/btnRescanB"
+            android:text="RESCAN"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"/>
+
+        <Button
+            android:id="@+id/btnAddB"
+            android:text="ADD (Set Location)"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"/>
+
+        <Button
+            android:id="@+id/btnCancelB"
+            android:text="CANCEL"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"/>
+    </LinearLayout>
+</LinearLayout>
+
+
+
+
+
 
