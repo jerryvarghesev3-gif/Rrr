@@ -1,1 +1,102 @@
-aa
+private fun startCamera() {
+    val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
+
+    cameraProviderFuture.addListener({
+        val provider = cameraProviderFuture.get()
+
+        val preview = Preview.Builder().build().also {
+            it.setSurfaceProvider(previewView.surfaceProvider)
+        }
+        val selector = CameraSelector.DEFAULT_BACK_CAMERA
+
+        val analysis = ImageAnalysis.Builder()
+            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+            .build()
+
+        // Inline analyzer (no BarcodeAnalyzer class needed)
+        analysis.setAnalyzer(
+            ContextCompat.getMainExecutor(this),
+            ImageAnalysis.Analyzer { imageProxy ->
+                val media = imageProxy.image ?: run { imageProxy.close(); return@Analyzer }
+                val image = InputImage.fromMediaImage(
+                    media, imageProxy.imageInfo.rotationDegrees
+                )
+                val scanner = BarcodeScanning.getClient(
+                    BarcodeScannerOptions.Builder()
+                        .setBarcodeFormats(Barcode.FORMAT_QR_CODE) // only QR if you want
+                        .build()
+                )
+                scanner.process(image)
+                    .addOnSuccessListener { barcodes ->
+                        val text = barcodes.firstOrNull()?.rawValue
+                        if (!text.isNullOrBlank() && scanning) {
+                            scanning = false
+                            bedId = text.trim()
+                            txtInfo.text = "bedId: $bedId"
+                            btnContinue.isEnabled = true
+                        }
+                    }
+                    .addOnCompleteListener { imageProxy.close() }
+            }
+        )
+
+        provider.unbindAll()
+        provider.bindToLifecycle(this, selector, preview, analysis)
+        previewView.visibility = View.VISIBLE
+        txtInfo.text = "Aim at bedId QR"
+    }, ContextCompat.getMainExecutor(this))
+}
+
+
+
+
+
+private fun startCamera() {
+    val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
+
+    cameraProviderFuture.addListener({
+        val provider = cameraProviderFuture.get()
+
+        val preview = Preview.Builder().build().also {
+            it.setSurfaceProvider(previewView.surfaceProvider)
+        }
+        val selector = CameraSelector.DEFAULT_BACK_CAMERA
+
+        val analysis = ImageAnalysis.Builder()
+            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+            .build()
+
+        analysis.setAnalyzer(
+            ContextCompat.getMainExecutor(this),
+            ImageAnalysis.Analyzer { imageProxy ->
+                val media = imageProxy.image ?: run { imageProxy.close(); return@Analyzer }
+                val image = InputImage.fromMediaImage(
+                    media, imageProxy.imageInfo.rotationDegrees
+                )
+                val scanner = BarcodeScanning.getClient(
+                    BarcodeScannerOptions.Builder()
+                        .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
+                        .build()
+                )
+                scanner.process(image)
+                    .addOnSuccessListener { barcodes ->
+                        val text = barcodes.firstOrNull()?.rawValue
+                        if (!text.isNullOrBlank() && scanning) {
+                            scanning = false
+                            locationId = text.trim()
+                            txtInfo.text = "locationId: $locationId"
+                            btnAdd.isEnabled = true
+                        }
+                    }
+                    .addOnCompleteListener { imageProxy.close() }
+            }
+        )
+
+        provider.unbindAll()
+        provider.bindToLifecycle(this, selector, preview, analysis)
+        previewView.visibility = View.VISIBLE
+        txtInfo.text = "Aim at locationId QR"
+    }, ContextCompat.getMainExecutor(this))
+}
+
+
