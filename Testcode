@@ -99,3 +99,32 @@ private fun onSetLocationResponse(json: String) {
 
 
 
+private fun prepareMqttForSetLocation() {
+    val c = MqttHolder.readyClientOrNull() ?: run {
+        setStatus("MQTT not connected"); return
+    }
+
+    // subscribe the response topic
+    c.subscribe(topicSetLocationResp(bedId), 1, null, object : IMqttActionListener {
+        override fun onSuccess(asyncActionToken: IMqttToken?) { /* optional: toast("Listening…") */ }
+        override fun onFailure(asyncActionToken: IMqttToken?, exception: Throwable?) {
+            toast("Subscribe failed: ${exception?.message}")
+        }
+    })
+
+    // ensure the callback routes set_location replies here
+    c.setCallback(object : MqttCallbackExtended {
+        override fun connectComplete(reconnect: Boolean, serverURI: String?) {}
+        override fun connectionLost(cause: Throwable?) { /* optional UI */ }
+        override fun deliveryComplete(token: IMqttDeliveryToken?) {}
+
+        override fun messageArrived(topic: String?, message: MqttMessage?) {
+            val payload = message?.toString().orEmpty()
+            if (topic == topicSetLocationResp(bedId)) {
+                ui { onSetLocationResponse(payload) }   // run on UI thread
+            }
+        }
+    })
+}
+
+
