@@ -1,1 +1,270 @@
 ll
+
+
+
+// QRBActivity.kt
+package com.connect.connection
+
+import android.app.AlertDialog
+import android.os.Bundle
+import android.view.View
+import android.widget.Button
+import android.widget.TextView
+import android.widget.Toast
+import androidx.activity.ComponentActivity
+import org.eclipse.paho.android.service.MqttAndroidClient
+import org.eclipse.paho.client.mqttv3.IMqttActionListener
+import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken
+import org.eclipse.paho.client.mqttv3.IMqttToken
+import org.eclipse.paho.client.mqttv3.MqttCallbackExtended
+import org.eclipse.paho.client.mqttv3.MqttMessage
+import org.json.JSONObject
+import java.nio.charset.Charset
+import java.util.concurrent.atomic.AtomicInteger
+
+class QRBActivity : ComponentActivity() {
+
+    // ---- Views ----
+    private lateinit var txtInfo: TextView
+    private lateinit var btnAdd: Button
+    private lateinit var btnCancel: Button
+    private lateinit var btnRescan: Button
+
+    // ---- Inputs ----
+    private lateinit var gatewayId: String
+    private lateinit var bedId: String
+    private var locationId: String? = null
+
+    // ---- MQTT ----
+    private val txnGen = AtomicInteger(100)
+    private var lastTxnSetLoc: Int = -1
+    private val client: MqttAndroidClient? get() = MqttHolder.readyClientOrNull()
+
+    // ---- Lifecycle ----
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_qrb)
+
+        // views
+        txtInfo = findViewById(R.id.qrTextB)
+        btnAdd = findViewById(R.id.btnAddB)
+        btnCancel = findViewById(R.id.btnCancelB)
+        btnRescan = findViewById(R.id.btnRescanB)
+
+        // intent extras
+        gatewayId = intent.getStringExtra("gatewayId") ?: ""
+        bedId = intent.getStringExtra("bedId") ?: ""
+        locationId = intent.getStringExtra("locationId")
+
+        btnAdd.isEnabled = false
+        txtInfo.text = "Aim at locationId QR"
+
+        btnCancel.setOnClickListener { finish() }
+
+        btnRescan.setOnClickListener {
+            // your rescan logic (camera restart etc.)
+            txtInfo.text = "Aim at locationId QR"
+            btnAdd.isEnabled = false
+            locationId = null
+        }
+
+        btnAdd.setOnClickListener { v: View ->
+            btnAdd.isEnabled = false
+            txtInfo.text = "Associating (override)…"
+            sendSetLocation(force = true)   // use force=true when we are changing mapping
+        }
+
+        // your camera start (unchanged)
+        ensureCameraThenStart()
+
+        // prepare mqtt for replies
+        prepareMqtt()
+    }
+
+    // ---- Topics ----
+    private fun topicSetLocationResp(replyKey: String): String =
+        "2.0/aa/bb/cc/$replyKey/command/set_location/response"
+
+    private fun topicSetLocationReq(targetGateway: String): String =
+        "2.0/aa/bb/gateway/$targetGateway/command/set_location/request"
+
+    // ---- MQTT prep & callback ----
+    private fun prepareMqtt() {
+        val c = client
+        if (c == null) {
+            ui { Toast.makeText(this, "MQTT not ready", Toast.LENGTH_LONG).show() }
+            return
+        }
+
+        // subscribe to the reply topic tied to this bed
+        c.subscribe(topicSetLocationResp(bedId), 1, null, object : IMqttActionListener {
+            override fun onSuccess(asyncActionToken: IMqttToken?) {
+                ui { Toast.makeText(this@QRBActivity, "Subscribed", Toast.LENGTH_SHORT).show() }
+            }
+            override fun onFailure(asyncActionToken: IMqttToken?, exception: Throwable?) {
+                ui {
+                    Toast.makeText(
+                        this@QRBActivity,
+                        "Subscribe failed: ${exception?.message}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        })
+
+        // single process-wide callback is fine
+        c.setCallback(object : MqttCallbackExtended {
+            override fun connectComplete(reconnect: Boolean, serverURI: String?) {}
+            override fun connectionLost(cause: Throwable?) {}
+            override fun deliveryComplete(token: IMqttDeliveryToken?) {}
+
+            override fun messageArrived(topic: String?, message: MqttMessage?) {
+                val payload = message?.toString().orEmpty()
+                if (topic == topicSetLocationResp(bedId)) {
+                    handleSetLocationResponse(payload)
+                }
+            }
+        })
+    }
+
+    // ---- Publish set_location ----
+    private fun sendSetLocation(force: Boolean) {
+        val c = client
+        if (c == null) {
+            setStatus("Not connected")
+            return
+        }
+        val loc = locationId
+        if (loc.isNullOrBlank()) {
+            setStatus("No locationId scanned")
+            btnAdd.isEnabled = true
+            return
+        }
+
+        lastTxnSetLoc = txnGen.incrementAndGet()
+
+        val data = JSONObject()
+            .put("bed_id", bedId)
+            .put("force", force)
+            .put("location_id", loc)
+
+        val req = JSONObject()
+            .put("command_id", "set_location")
+            .put("data", data)
+            .put("reply_to", topicSetLocationResp(bedId))
+            .put("transaction_id", lastTxnSetLoc)
+
+        val payload = req.toString().toByteArray(Charset.forName("UTF-8"))
+
+        c.publish(
+            topicSetLocationReq(gatewayId),
+            payload,
+            1,          // qos
+            false,      // retained
+            null,       // userContext must be null
+            object : IMqttActionListener {
+                override fun onSuccess(asyncActionToken: IMqttToken?) {
+                    ui { txtInfo.text = "Sent set_location (tx=$lastTxnSetLoc)" }
+                }
+                override fun onFailure(asyncActionToken: IMqttToken?, exception: Throwable?) {
+                    ui {
+                        Toast.makeText(
+                            this@QRBActivity,
+                            "Publish failed: ${exception?.message}",
+                            Toast.LENGTH_LONG
+                        ).show()
+                        btnAdd.isEnabled = true
+                        txtInfo.text = "Aim at locationId QR"
+                    }
+                }
+            }
+        )
+    }
+
+    // ---- Handle response ----
+    private fun handleSetLocationResponse(json: String) {
+        try {
+            val obj = JSONObject(json)
+            val tx = obj.optInt("transaction_id", -1)
+            if (tx != lastTxnSetLoc) return
+
+            val status = obj.optInt("status", -1)
+            when (status) {
+                0 -> {
+                    val resolvedLoc = obj.optJSONObject("data")
+                        ?.optJSONObject("location")
+                        ?.optString("id")
+                        ?: locationId
+
+                    setStatus("Location set OK → $resolvedLoc")
+
+                    // Prompt: verify KLM?
+                    showVerifyKlmPrompt(resolvedLoc)
+                }
+                99 -> {
+                    // “overridden/unassociated” style statuses – report but don’t crash the flow
+                    setStatus("set_location failed (status=99)")
+                    // Re-enable if you want to let user try again
+                    ui { btnAdd.isEnabled = true }
+                }
+                else -> {
+                    setStatus("set_location failed (status=$status)")
+                    ui { btnAdd.isEnabled = true }
+                }
+            }
+        } catch (t: Throwable) {
+            setStatus("Bed set_location response: ${t.message}")
+            ui { btnAdd.isEnabled = true }
+        }
+    }
+
+    private fun showVerifyKlmPrompt(resolvedLocationId: String?) {
+        ui {
+            AlertDialog.Builder(this@QRBActivity)
+                .setTitle("Location associated")
+                .setMessage(
+                    buildString {
+                        append("Location: ${resolvedLocationId ?: locationId}\n\n")
+                        append("Do you want to verify KLM now?")
+                    }
+                )
+                .setPositiveButton("Continue") { _, _ ->
+                    // You’ll wire QRKlmActivity later; for now just continue to Summary
+                    goToSummary(status = 0, resolvedLocationId ?: locationId)
+                }
+                .setNegativeButton("Cancel") { _, _ ->
+                    goToSummary(status = 0, resolvedLocationId ?: locationId)
+                }
+                .setCancelable(false)
+                .show()
+        }
+    }
+
+    // ---- Navigation ----
+    private fun goToSummary(status: Int, loc: String?) {
+        val intent = android.content.Intent(this, SummaryActivity::class.java).apply {
+            putExtra("gatewayId", gatewayId)
+            putExtra("bedId", bedId)
+            putExtra("locationId", loc ?: "")
+            putExtra("status", status)
+        }
+        startActivity(intent)
+        finish()
+    }
+
+    // ---- UI helpers ----
+    private fun setStatus(text: String) = ui { txtInfo.text = text }
+    private fun ui(block: () -> Unit) = runOnUiThread(block)
+
+    // ---- Camera stub (leave as you have it) ----
+    private fun ensureCameraThenStart() {
+        // your existing camera permission/start code
+    }
+}
+
+
+
+
+
+
+
