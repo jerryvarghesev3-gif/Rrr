@@ -1,1 +1,353 @@
 ll
+
+
+package com.connect.connection
+
+import android.Manifest
+import android.app.AlertDialog
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
+import android.os.Bundle
+import android.widget.Button
+import android.widget.TextView
+import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
+import androidx.core.content.ContextCompat
+import com.google.mlkit.vision.barcode.Barcode
+import com.google.mlkit.vision.barcode.BarcodeScannerOptions
+import com.google.mlkit.vision.barcode.BarcodeScanning
+import com.google.mlkit.vision.common.InputImage
+import info.mqtt.android.service.MqttAndroidClient
+import org.eclipse.paho.client.mqttv3.IMqttActionListener
+import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken
+import org.eclipse.paho.client.mqttv3.IMqttToken
+import org.eclipse.paho.client.mqttv3.MqttCallbackExtended
+import org.eclipse.paho.client.mqttv3.MqttMessage
+import org.json.JSONObject
+import java.nio.charset.Charset
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
+
+class QRBActivity : ComponentActivity() {
+
+    // -------- Views --------
+    private lateinit var previewView: PreviewView
+    private lateinit var txtInfo: TextView
+    private lateinit var btnAdd: Button
+    private lateinit var btnCancel: Button
+    private lateinit var btnRescan: Button
+
+    // -------- Inputs (from Intent) --------
+    private lateinit var gatewayId: String
+    private lateinit var bedId: String
+    private var locationId: String? = null
+
+    // -------- Camera --------
+    private var cameraProvider: ProcessCameraProvider? = null
+    private var imageAnalysis: ImageAnalysis? = null
+    private val cameraExecutor = Executors.newSingleThreadExecutor()
+    private var scanning = true
+    private val scanner by lazy {
+        val opts = BarcodeScannerOptions.Builder()
+            .setBarcodeFormats(Barcode.FORMAT_QR_CODE, Barcode.FORMAT_CODE_128)
+            .build()
+        BarcodeScanning.getClient(opts)
+    }
+
+    // -------- MQTT --------
+    private lateinit var mqttClient: MqttAndroidClient
+    private val txnGen = AtomicInteger(100)
+    private var lastTxnSetLoc = -1
+    private var lastAttemptForced = false  // to avoid infinite retry loops
+
+    // -------- Lifecycle --------
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_qrb)
+
+        // Bind views
+        previewView = findViewById(R.id.previewViewB)
+        txtInfo     = findViewById(R.id.qrTextB)
+        btnAdd      = findViewById(R.id.btnAddB)
+        btnCancel   = findViewById(R.id.btnCancelB)
+        btnRescan   = findViewById(R.id.btnRescanB)
+
+        // Inputs
+        gatewayId  = intent.getStringExtra("gatewayId") ?: ""
+        bedId      = intent.getStringExtra("bedId") ?: ""
+        // locationId is scanned here, so no extra by default
+
+        // Initial UI
+        scanning = true
+        txtInfo.text = "Aim at location QR"
+        btnAdd.isEnabled = false
+
+        // Buttons
+        btnCancel.setOnClickListener { finish() }
+        btnRescan.setOnClickListener {
+            scanning = true
+            locationId = null
+            txtInfo.text = "Aim at location QR"
+            btnAdd.isEnabled = false
+        }
+        btnAdd.setOnClickListener {
+            // First try normal (force=false). If device says 98/99 we'll auto-retry with force=true
+            lastAttemptForced = false
+            btnAdd.isEnabled = false
+            txtInfo.text = "Associating…"
+            sendSetLocation(force = false)
+        }
+
+        // Start camera & MQTT
+        ensureCameraThenStart()
+        prepareMqtt()
+    }
+
+    // ===================== Camera =====================
+    private fun ensureCameraThenStart() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val granted = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) ==
+                    PackageManager.PERMISSION_GRANTED
+            if (!granted) {
+                requestPermissions(arrayOf(Manifest.permission.CAMERA), 2002)
+                return
+            }
+        }
+        startCamera()
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int, permissions: Array<out String>, grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 2002 && grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            startCamera()
+        } else {
+            Toast.makeText(this, "Camera permission required", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun startCamera() {
+        val providerFuture = ProcessCameraProvider.getInstance(this)
+        providerFuture.addListener({
+            val provider = providerFuture.get()
+            cameraProvider = provider
+
+            val preview = Preview.Builder().build().also {
+                it.setSurfaceProvider(previewView.surfaceProvider)
+            }
+
+            imageAnalysis = ImageAnalysis.Builder()
+                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .build().also { analysis ->
+                    analysis.setAnalyzer(cameraExecutor) { imageProxy ->
+                        val mediaImage = imageProxy.image
+                        if (mediaImage == null) {
+                            imageProxy.close()
+                            return@setAnalyzer
+                        }
+                        val rotation = imageProxy.imageInfo.rotationDegrees
+                        val input = InputImage.fromMediaImage(mediaImage, rotation)
+                        scanner.process(input)
+                            .addOnSuccessListener { codes ->
+                                if (!scanning) return@addOnSuccessListener
+                                val raw = codes.firstOrNull()?.rawValue?.trim()
+                                if (!raw.isNullOrBlank()) {
+                                    scanning = false
+                                    onQrDecoded(raw)
+                                }
+                            }
+                            .addOnFailureListener {
+                                // per-frame errors can be ignored
+                            }
+                            .addOnCompleteListener { imageProxy.close() }
+                    }
+                }
+
+            provider.unbindAll()
+            provider.bindToLifecycle(
+                this,
+                CameraSelector.DEFAULT_BACK_CAMERA,
+                preview,
+                imageAnalysis
+            )
+        }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun stopCamera() {
+        imageAnalysis?.clearAnalyzer()
+        cameraProvider?.unbindAll()
+    }
+
+    private fun onQrDecoded(text: String) {
+        ui {
+            locationId = text
+            txtInfo.text = "QR: $text"
+            btnAdd.isEnabled = true
+        }
+    }
+
+    // ===================== MQTT =====================
+    private fun prepareMqtt() {
+        val c = MqttHolder.readyClientOrNull()
+        if (c == null) {
+            Toast.makeText(this, "MQTT not ready", Toast.LENGTH_LONG).show()
+            return
+        }
+        mqttClient = c
+
+        // Subscribe for set_location responses for this bed
+        mqttClient.subscribe(topicSetLocationResp(bedId), 1, null,
+            object : IMqttActionListener {
+                override fun onSuccess(asyncActionToken: IMqttToken?) { /* ok */ }
+                override fun onFailure(asyncActionToken: IMqttToken?, exception: Throwable?) {
+                    ui { Toast.makeText(this@QRBActivity, "Subscribe failed: ${exception?.message}", Toast.LENGTH_SHORT).show() }
+                }
+            })
+
+        mqttClient.setCallback(object : MqttCallbackExtended {
+            override fun connectComplete(reconnect: Boolean, serverURI: String?) {}
+            override fun connectionLost(cause: Throwable?) {}
+            override fun deliveryComplete(token: IMqttDeliveryToken?) {}
+
+            override fun messageArrived(topic: String?, message: MqttMessage?) {
+                val payload = message?.toString().orEmpty()
+                if (topic == topicSetLocationResp(bedId)) {
+                    ui { handleSetLocationResponse(payload) }
+                }
+            }
+        })
+    }
+
+    private fun sendSetLocation(force: Boolean) {
+        val loc = locationId
+        if (loc.isNullOrBlank()) {
+            ui { Toast.makeText(this, "Scan a location QR first", Toast.LENGTH_SHORT).show() }
+            btnAdd.isEnabled = true
+            return
+        }
+        lastTxnSetLoc = txnGen.incrementAndGet()
+
+        val req = JSONObject()
+            .put("command_id", "set_location")
+            .put("data", JSONObject()
+                .put("bed_id", bedId)
+                .put("force", force)
+                .put("location_id", loc)
+            )
+            .put("reply_to", topicSetLocationResp(bedId))
+            .put("transaction_id", lastTxnSetLoc)
+
+        val bytes = req.toString().toByteArray(Charset.forName("UTF-8"))
+        mqttClient.publish(
+            topicSetLocationReq(gatewayId),
+            bytes,
+            1,
+            false,
+            null,
+            object : IMqttActionListener {
+                override fun onSuccess(asyncActionToken: IMqttToken?) {
+                    setStatus("Sent set_location (tx=$lastTxnSetLoc)…")
+                }
+                override fun onFailure(asyncActionToken: IMqttToken?, exception: Throwable?) {
+                    ui {
+                        Toast.makeText(this@QRBActivity, "Publish failed: ${exception?.message}", Toast.LENGTH_SHORT).show()
+                        btnAdd.isEnabled = true
+                    }
+                }
+            }
+        )
+    }
+
+    private fun handleSetLocationResponse(json: String) {
+        try {
+            val obj = JSONObject(json)
+            val tx = obj.optInt("transaction_id", -1)
+            if (tx != lastTxnSetLoc) return  // ignore stale replies
+
+            when (val status = obj.optInt("status", -1)) {
+                0 -> {
+                    val loc = obj.optJSONObject("data")
+                        ?.optJSONObject("location")
+                        ?.optString("id") ?: locationId.orEmpty()
+
+                    setStatus("Location set OK → $loc")
+                    showVerifyKlmPrompt(loc)
+                }
+
+                98, 99 -> {
+                    // Already associated / needs override
+                    if (!lastAttemptForced) {
+                        lastAttemptForced = true
+                        setStatus("Already associated – retrying with override…")
+                        sendSetLocation(force = true)
+                    } else {
+                        // We already forced and still got 98/99 — treat as failure and allow retry
+                        setStatus("Override failed (status=$status)")
+                        btnAdd.isEnabled = true
+                    }
+                }
+
+                else -> {
+                    setStatus("set_location failed (status=$status)")
+                    btnAdd.isEnabled = true
+                }
+            }
+        } catch (t: Throwable) {
+            setStatus("Parse error: ${t.message}")
+            btnAdd.isEnabled = true
+        }
+    }
+
+    // ===================== UX (KLM prompt now / KLM scanner later) =====================
+    private fun showVerifyKlmPrompt(resolvedLocationId: String) {
+        AlertDialog.Builder(this)
+            .setTitle("Location associated")
+            .setMessage("Location: $resolvedLocationId\n\nVerify KLM now?")
+            .setPositiveButton("Continue") { _, _ ->
+                // Later: startActivity(Intent(this, QRKLMActivity::class.java) ...)
+                goToSummary(0, resolvedLocationId)
+            }
+            .setNegativeButton("Cancel") { _, _ ->
+                goToSummary(0, resolvedLocationId)
+            }
+            .setCancelable(false)
+            .show()
+    }
+
+    private fun goToSummary(status: Int, loc: String) {
+        val i = Intent(this, SummaryActivity::class.java).apply {
+            putExtra("gatewayId", gatewayId)
+            putExtra("bedId", bedId)
+            putExtra("locationId", loc)
+            putExtra("status", status)
+        }
+        startActivity(i)
+        finish()
+    }
+
+    // ===================== Utils =====================
+    private fun setStatus(s: String) = ui { txtInfo.text = s }
+    private inline fun ui(crossinline block: () -> Unit) = runOnUiThread { block() }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        imageAnalysis?.clearAnalyzer()
+        cameraProvider?.unbindAll()
+        cameraExecutor.shutdown()
+    }
+
+    // ---- If you DON'T have these topic helpers, uncomment and adjust: ----
+    // private fun topicSetLocationReq(gatewayId: String) =
+    //     "2.0/aa/bb/gateway/$gatewayId/command/set_location/request"
+    // private fun topicSetLocationResp(bedId: String) =
+    //     "2.0/aa/bb/bed/$bedId/command/set_location/response"
+}
+
+
