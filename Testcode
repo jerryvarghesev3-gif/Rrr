@@ -1,1 +1,110 @@
 ll
+
+
+private fun sendSetLocation(force: Boolean = false) {
+    if (!MqttHolder.client.isConnected) {
+        ui { txtInfo.text = "Not connected" }
+        return
+    }
+
+    lastTxnSetLoc += 1
+
+    val data = JSONObject()
+        .put("bed_id", bedId)
+        .put("force", force)          // <-- IMPORTANT
+        .put("location_id", locationId)
+
+    val req = JSONObject()
+        .put("command_id", "set_location")
+        .put("data", data)
+        .put("reply_to", topicSetLocationResp(bedId))
+        .put("transaction_id", lastTxnSetLoc)
+
+    val payload = req.toString().toByteArray(Charsets.UTF_8)
+
+    client.publish(
+        topicSetLocationReq(gatewayId),
+        payload, 1, false, null,
+        object : IMqttActionListener {
+            override fun onSuccess(asyncActionToken: IMqttToken?) {
+                ui { txtInfo.text = "Sent set_location (tx=$lastTxnSetLoc)" }
+            }
+            override fun onFailure(asyncActionToken: IMqttToken?, exception: Throwable?) {
+                toast("Publish failed: ${exception?.message}")
+                ui { btnAdd.isEnabled = true }
+            }
+        }
+    )
+}
+
+
+
+
+
+
+private fun onSetLocationResponse(json: String) {
+    try {
+        val obj = JSONObject(json)
+        val tx  = obj.optInt("transaction_id", -1)
+        if (tx != lastTxnSetLoc) return
+
+        val status = obj.optInt("status", -1)
+
+        when (status) {
+            0 -> {
+                // success
+                val loc = obj.optJSONObject("data")
+                    ?.optJSONObject("location")
+                    ?.optString("id") ?: locationId
+
+                ui { txtInfo.text = "Location set OK → $loc" }
+
+                // Go to summary without any dialog
+                val intent = Intent(this, SummaryActivity::class.java).apply {
+                    putExtra("gatewayId", gatewayId)
+                    putExtra("bedId", bedId)
+                    putExtra("locationId", loc)
+                    putExtra("status", 0)
+                }
+                startActivity(intent)
+                finish()
+            }
+
+            99, 2 -> {
+                // “override required / overridden / conflict” – auto-accept silently
+                // Option A: just treat as success:
+                val loc = obj.optJSONObject("data")
+                    ?.optJSONObject("location")
+                    ?.optString("id") ?: locationId
+
+                ui { txtInfo.text = "Override accepted → $loc" }
+
+                val intent = Intent(this, SummaryActivity::class.java).apply {
+                    putExtra("gatewayId", gatewayId)
+                    putExtra("bedId", bedId)
+                    putExtra("locationId", loc)
+                    putExtra("status", 0)
+                }
+                startActivity(intent)
+                finish()
+
+                // Option B (if your backend needs another confirm):
+                // sendSetLocation(force = true)
+            }
+
+            else -> {
+                // failure
+                ui {
+                    txtInfo.text = "set_location failed (status=$status)"
+                    btnAdd.isEnabled = true
+                }
+            }
+        }
+    } catch (t: Throwable) {
+        ui {
+            txtInfo.text = "Bad response: ${t.message}"
+            btnAdd.isEnabled = true
+        }
+    }
+}
+
