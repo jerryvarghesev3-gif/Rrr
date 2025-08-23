@@ -1,1 +1,41 @@
 ll
+
+
+
+private fun sendSetLocation(force: Boolean = false) {
+    val client = MqttHolder.readyClientOrNull() ?: run {
+        Toast.makeText(this, "MQTT not ready", Toast.LENGTH_LONG).show()
+        return
+    }
+
+    lastTxnSetLoc = txnGen.incrementAndGet()
+
+    val data = JSONObject()
+        .put("bed_id", bedId)
+        .put("force", force)                 // ← REQUIRED by the gateway to override
+        .put("location_id", locationId)
+
+    val req = JSONObject()
+        .put("command_id", "set_location")
+        .put("data", data)
+        .put("reply_to", topicSetLocationResp(bedId))
+        .put("transaction_id", lastTxnSetLoc)
+
+    val payload = req.toString().toByteArray(Charsets.UTF_8)
+
+    client.publish(
+        topicSetLocationReq(gatewayId),
+        payload,
+        /* qos = */ 1,
+        /* retained = */ false,
+        /* userContext = */ null,
+        object : IMqttActionListener {
+            override fun onSuccess(asyncActionToken: IMqttToken?) {
+                ui { txtInfo.text = "Sent set_location (tx=$lastTxnSetLoc)" }
+            }
+            override fun onFailure(asyncActionToken: IMqttToken?, exception: Throwable?) {
+                ui { Toast.makeText(this@QRBActivity, "Publish failed: ${exception?.message}", Toast.LENGTH_SHORT).show() }
+            }
+        }
+    )
+}
