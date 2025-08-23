@@ -1,1 +1,50 @@
 ll
+
+
+<resources>
+    <string name="app_name">Connection</string>
+    <string name="connect">Connect</string>
+    <string name="status_disconnected">Disconnected</string>
+    <string name="status_connected">Connected</string>
+
+    <!-- Titles you asked for -->
+    <string name="title_main">CARAVAN Memory ID</string>
+    <string name="title_qra">Caravan Memory Massager ID</string>
+    <string name="title_qrb">Caravan SeatId</string>
+
+    <!-- Buttons -->
+    <string name="rescan">RESCAN</string>
+    <string name="continue_txt">CONTINUE</string>
+    <string name="cancel">CANCEL</string>
+</resources>
+
+
+
+
+<ImageButton
+    android:id="@+id/connectButton"
+    android:layout_width="120dp"
+    android:layout_height="120dp"
+    android:layout_gravity="center"
+    android:background="@drawable/btn_green_square"
+    android:src="@drawable/ic_connect"           <!-- PNG -->
+    android:tint="@android:color/white"
+    android:scaleType="centerInside"
+    android:contentDescription="@string/connect"/>
+
+
+<LinearLayout
+    android:id="@+id/bottomBar"
+    android:layout_width="0dp"
+    android:layout_height="wrap_content"
+    android:layout_alignParentBottom="true"
+    android:layout_margin="16dp"
+    android:gravity="center"
+    android:orientation="horizontal"
+    app:layout_constraintBottom_toBottomOf="parent"
+    app:layout_constraintStart_toStartOf="parent"
+    app:layout_constraintEnd_toEndOf="parent">
+    <!-- three green buttons here -->
+</LinearLayout>
+
+
