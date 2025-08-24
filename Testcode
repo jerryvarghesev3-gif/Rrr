@@ -1,1 +1,143 @@
 ll
+
+
+
+
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="200dp" android:height="200dp"
+    android:viewportWidth="200" android:viewportHeight="200">
+    <!-- white filled circle -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M100,10a90,90 0 1,0 0,180a90,90 0 1,0 0,-180z"/>
+    <!-- blue ring -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#1E75FF"
+        android:strokeWidth="8"
+        android:pathData="M100,22a78,78 0 1,0 0,156a78,78 0 1,0 0,-156z"/>
+    <!-- plug shape (blue) -->
+    <path
+        android:fillColor="#1E75FF"
+        android:pathData="M74,87l28,-28c1.5,-1.5 3.9,-1.5 5.4,0l29,29c1.5,1.5 1.5,3.9 0,5.4l-6,6l7,7c1.5,1.5 1.5,3.9 0,5.4l-6.8,6.8c-1.5,1.5 -3.9,1.5 -5.4,0l-7,-7l-8.8,8.8c-1.5,1.5 -3.9,1.5 -5.4,0l-6.8,-6.8c-1.5,-1.5 -1.5,-3.9 0,-5.4l8.8,-8.8l-6.9,-6.9l-6.1,6.1c-1.5,1.5 -3.9,1.5 -5.4,0l-9.2,-9.2c-1.5,-1.5 -1.5,-3.9 0,-5.4z"/>
+</vector>
+
+
+
+
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="#22000000">
+    <item android:id="@android:id/mask">
+        <shape android:shape="oval">
+            <solid android:color="#FFFFFFFF"/>
+        </shape>
+    </item>
+</ripple>
+
+
+
+
+
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <!-- Background gradient -->
+    <ImageView
+        android:id="@+id/bgImage"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:scaleType="centerCrop"
+        android:src="@drawable/bg_home"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"/>
+
+    <!-- Title: CARAVAN -->
+    <TextView
+        android:id="@+id/titleTop"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:text="CARAVAN"
+        android:textColor="@android:color/white"
+        android:textStyle="bold"
+        android:textSize="36sp"
+        android:letterSpacing="0.05"
+        android:shadowColor="#66000000"
+        android:shadowDx="0" android:shadowDy="2" android:shadowRadius="4"
+        android:paddingTop="24dp"
+        android:gravity="center"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"/>
+
+    <!-- Subtitle: Memory ID -->
+    <TextView
+        android:id="@+id/titleBottom"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:text="Memory ID"
+        android:textColor="@android:color/white"
+        android:textStyle="bold"
+        android:textSize="24sp"
+        android:letterSpacing="0.02"
+        android:paddingTop="4dp"
+        android:paddingBottom="12dp"
+        android:gravity="center"
+        app:layout_constraintTop_toBottomOf="@id/titleTop"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"/>
+
+    <!-- Status line -->
+    <TextView
+        android:id="@+id/statusText"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:text="@string/status_wait"
+        android:textColor="@android:color/white"
+        android:textSize="16sp"
+        android:gravity="center"
+        android:paddingBottom="16dp"
+        app:layout_constraintTop_toBottomOf="@id/titleBottom"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"/>
+
+    <!-- Round connect button with plug icon -->
+    <ImageButton
+        android:id="@+id/connectButton"
+        android:layout_width="180dp"
+        android:layout_height="180dp"
+        android:background="@drawable/btn_round_ripple"
+        android:contentDescription="@string/connect"
+        android:padding="0dp"
+        android:scaleType="centerInside"
+        app:srcCompat="@drawable/ic_plug_circle"
+        app:tint="@null"
+        app:layout_constraintTop_toBottomOf="@id/statusText"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintVertical_bias="0.0"/>
+
+    <!-- Bottom caravan logo -->
+    <ImageView
+        android:id="@+id/brandBottom"
+        android:layout_width="0dp"
+        android:layout_height="120dp"
+        android:src="@drawable/caravan_brand"
+        android:scaleType="fitCenter"
+        android:adjustViewBounds="true"
+        android:paddingStart="24dp"
+        android:paddingEnd="24dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"/>
+
+</androidx.constraintlayout.widget.ConstraintLayout>
+
+
+
+
