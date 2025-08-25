@@ -107,3 +107,31 @@ ll
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"/>
 </androidx.constraintlayout.widget.ConstraintLayout>
+
+
+
+
+
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Connection</string>
+    <string name="connect">Connect</string>
+
+    <!-- Status lines -->
+    <string name="status_wait">Gateway not ready</string>
+    <string name="status_disconnected">Disconnected</string>
+    <string name="status_connected">Connected</string>
+
+    <!-- Launcher title -->
+    <string name="app_title_caravan">CARAVAN</string>
+    <string name="status_default">Memory ID</string>
+
+    <!-- Other screens (keep if you use them) -->
+    <string name="title_qra">Caravan Memory Massager ID</string>
+    <string name="title_qrb">Caravan SeatId</string>
+
+    <!-- Buttons -->
+    <string name="rescan">RESCAN</string>
+    <string name="continue_txt">CONTINUE</string>
+    <string name="cancel">CANCEL</string>
+</resources>
