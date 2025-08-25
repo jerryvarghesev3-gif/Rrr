@@ -1,1 +1,235 @@
+package com.connect.connection
 
+import android.Manifest
+import android.content.Intent
+import android.net.Uri
+import android.os.Bundle
+import android.util.Log
+import android.view.View
+import android.widget.Button
+import android.widget.TextView
+import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AppCompatActivity
+import androidx.camera.core.*
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
+import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
+import com.google.mlkit.vision.barcode.Barcode
+import com.google.mlkit.vision.barcode.BarcodeScannerOptions
+import com.google.mlkit.vision.barcode.BarcodeScanning
+import com.google.mlkit.vision.common.InputImage
+import java.io.File
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
+
+class QRAActivity : AppCompatActivity() {
+
+    private lateinit var previewView: PreviewView
+    private lateinit var btnRescan: Button
+    private lateinit var btnContinue: Button
+    private lateinit var btnCancel: Button
+    private lateinit var txtScanValue: TextView
+
+    private lateinit var cameraExecutor: ExecutorService
+    private var imageCapture: ImageCapture? = null
+
+    // ML Kit Barcode scanner (QR + Code128/39 etc. add/remove as needed)
+    private val barcodeScanner by lazy {
+        val opts = BarcodeScannerOptions.Builder()
+            .setBarcodeFormats(
+                Barcode.FORMAT_QR_CODE,
+                Barcode.FORMAT_CODE_128,
+                Barcode.FORMAT_CODE_39,
+                Barcode.FORMAT_CODE_93,
+                Barcode.FORMAT_EAN_13,
+                Barcode.FORMAT_EAN_8,
+                Barcode.FORMAT_UPC_A,
+                Barcode.FORMAT_UPC_E,
+                Barcode.FORMAT_AZTEC,
+                Barcode.FORMAT_DATA_MATRIX
+            )
+            .build()
+        BarcodeScanning.getClient(opts)
+    }
+
+    private val analyzing = AtomicBoolean(true)
+    private var lastDecoded: String? = null
+    private val TAG = "QRAActivity"
+
+    // Permission launcher
+    private val requestCamera = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) startCamera() else {
+            Toast.makeText(this, "Camera permission required", Toast.LENGTH_SHORT).show()
+            finish()
+        }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_qra) // ensure this layout exists
+
+        previewView   = findViewById(R.id.previewView)   // PreviewView in your XML
+        txtScanValue  = findViewById(R.id.txtScanValue)  // TextView to show decoded result
+        btnRescan     = findViewById(R.id.btnRescan)     // "RESCAN"
+        btnContinue   = findViewById(R.id.btnContinue)   // "CONTINUE"
+        btnCancel     = findViewById(R.id.btnCancel)     // "CANCEL"
+
+        cameraExecutor = Executors.newSingleThreadExecutor()
+
+        btnContinue.isEnabled = false
+        txtScanValue.text = ""  // clear initial
+
+        btnRescan.setOnClickListener { resetScan() }
+        btnCancel.setOnClickListener { finish() }
+        btnContinue.setOnClickListener {
+            val value = lastDecoded
+            if (value.isNullOrEmpty()) {
+                Toast.makeText(this, "No code scanned yet", Toast.LENGTH_SHORT).show()
+            } else {
+                capturePhotoAndGo(value)
+            }
+        }
+
+        // Ask for camera permission and go
+        requestCamera.launch(Manifest.permission.CAMERA)
+    }
+
+    private fun resetScan() {
+        lastDecoded = null
+        txtScanValue.text = ""
+        btnContinue.isEnabled = false
+        analyzing.set(true) // allow analyzer to decode again
+        Toast.makeText(this, "Ready to scan…", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun startCamera() {
+        val providerFuture = ProcessCameraProvider.getInstance(this)
+        providerFuture.addListener({
+            val cameraProvider = providerFuture.get()
+
+            val preview = Preview.Builder().build().also {
+                it.setSurfaceProvider(previewView.surfaceProvider)
+            }
+
+            val analysis = ImageAnalysis.Builder()
+                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .build().apply {
+                    setAnalyzer(cameraExecutor) { imageProxy ->
+                        analyzeFrame(imageProxy)
+                    }
+                }
+
+            imageCapture = ImageCapture.Builder()
+                .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                .build()
+
+            try {
+                cameraProvider.unbindAll()
+                cameraProvider.bindToLifecycle(
+                    this,
+                    CameraSelector.DEFAULT_BACK_CAMERA,
+                    preview,
+                    analysis,
+                    imageCapture
+                )
+            } catch (t: Throwable) {
+                Log.e(TAG, "bindToLifecycle failed", t)
+                Toast.makeText(this, "Camera init failed", Toast.LENGTH_SHORT).show()
+            }
+        }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun analyzeFrame(imageProxy: ImageProxy) {
+        val mediaImage = imageProxy.image
+        if (mediaImage == null) {
+            imageProxy.close()
+            return
+        }
+
+        // Avoid multiple hits: once we have a value, stop decoding until Rescan
+        if (!analyzing.get()) {
+            imageProxy.close()
+            return
+        }
+
+        val rotation = imageProxy.imageInfo.rotationDegrees
+        val image = InputImage.fromMediaImage(mediaImage, rotation)
+
+        barcodeScanner.process(image)
+            .addOnSuccessListener { barcodes ->
+                val first = barcodes.firstOrNull { it.rawValue?.isNotEmpty() == true }
+                val value = first?.rawValue
+                if (value != null && analyzing.compareAndSet(true, false)) {
+                    lastDecoded = value
+                    runOnUiThread {
+                        txtScanValue.text = value
+                        btnContinue.isEnabled = true
+                    }
+                }
+            }
+            .addOnFailureListener { e ->
+                Log.e(TAG, "Barcode analysis failed", e)
+            }
+            .addOnCompleteListener {
+                imageProxy.close()
+            }
+    }
+
+    private fun capturePhotoAndGo(value: String) {
+        val ic = imageCapture
+        if (ic == null) {
+            // If imageCapture not ready, go ahead without photo
+            goNext(value, null)
+            return
+        }
+
+        val dir = File(cacheDir, "images").apply { mkdirs() }
+        val photoFile = File(dir, "qrA_${System.currentTimeMillis()}.jpg")
+
+        val outputOpts = ImageCapture.OutputFileOptions.Builder(photoFile).build()
+        ic.takePicture(
+            outputOpts,
+            ContextCompat.getMainExecutor(this),
+            object : ImageCapture.OnImageSavedCallback {
+                override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
+                    val uri: Uri = FileProvider.getUriForFile(
+                        this@QRAActivity,
+                        "${packageName}.fileprovider",   // must match manifest
+                        photoFile
+                    )
+                    goNext(value, uri)
+                }
+
+                override fun onError(exception: ImageCaptureException) {
+                    Log.e(TAG, "takePicture failed", exception)
+                    goNext(value, null) // continue without photo if needed
+                }
+            }
+        )
+    }
+
+    private fun goNext(decoded: String, photoUri: Uri?) {
+        // TODO: If your next screen is QRBActivity, change SummaryActivity::class.java below.
+        val intent = Intent(this, SummaryActivity::class.java).apply {
+            putExtra("qr_value", decoded)
+            photoUri?.let {
+                putExtra("qr_uri", it.toString())
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+        }
+        startActivity(intent)
+        // If you don't want to return to this scanner via Back:
+        // finish()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        try { barcodeScanner.close() } catch (_: Exception) {}
+        if (::cameraExecutor.isInitialized) cameraExecutor.shutdown()
+    }
+}
