@@ -1,1 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- White disk (no corners to crop) -->
+    <item>
+        <shape android:shape="oval">
+            <solid android:color="@android:color/white"/>
+        </shape>
+    </item>
+
+    <!-- Thin light-blue ring on top -->
+    <item>
+        <shape android:shape="oval">
+            <stroke
+                android:width="3dp"
+                android:color="#4DA3FF"/>  <!-- same light blue you want -->
+            <solid android:color="@android:color/transparent"/>
+        </shape>
+    </item>
+</layer-list>
+
+
+
+
+
+<!-- Round button (white disk + light-blue ring) with transparent vector icon -->
+<ImageButton
+    android:id="@+id/connectButton"
+    android:layout_width="176dp"
+    android:layout_height="176dp"
+    android:background="@drawable/circle_button"      <!-- A -->
+    android:src="@drawable/ic_connect_vector"         <!-- B -->
+    android:scaleType="centerInside"
+    android:padding="28dp"
+    android:tint="#4DA3FF"                            <!-- makes vector same light blue -->
+    android:contentDescription="@string/connect"
+    app:layout_constraintTop_toBottomOf="@id/titleMain"
+    app:layout_constraintBottom_toTopOf="@id/brandBottom"
+    app:layout_constraintStart_toStartOf="parent"
+    app:layout_constraintEnd_toEndOf="parent"
+    app:layout_constraintVertical_bias="0.5"/>
+
+
+
+
 
