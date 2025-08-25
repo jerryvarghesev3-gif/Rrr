@@ -135,3 +135,33 @@ ll
     <string name="continue_txt">CONTINUE</string>
     <string name="cancel">CANCEL</string>
 </resources>
+
+
+
+
+
+
+
+
+
+<!-- Round button with blue ring + white plug -->
+<ImageButton
+    android:id="@+id/connectButton"
+    android:layout_width="176dp"
+    android:layout_height="176dp"
+
+    android:background="@drawable/btn_round_blue"   <!-- the circular ring -->
+    android:src="@drawable/ic_connect"              <!-- the plug artwork -->
+
+    android:scaleType="centerInside"
+    android:adjustViewBounds="true"
+    android:padding="28dp"
+    android:tint="@null"
+    android:contentDescription="@string/connect"
+
+    app:layout_constraintTop_toBottomOf="@id/titleMain"
+    app:layout_constraintBottom_toTopOf="@id/brandBottom"
+    app:layout_constraintStart_toStartOf="parent"
+    app:layout_constraintEnd_toEndOf="parent"
+    app:layout_constraintVertical_bias="0.5" />
+
