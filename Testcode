@@ -1,16 +1,1 @@
-ll
 
-
-
-
-<?xml version="1.0" encoding="utf-8"?>
-<shape xmlns:android="http://schemas.android.com/apk/res/android"
-    android:shape="oval">
-
-    <!-- Thin light blue circle -->
-    <stroke
-        android:width="3dp"          <!-- thinner stroke -->
-        android:color="#4DA3FF" />   <!-- light blue to match inner circle -->
-
-    <solid android:color="@android:color/transparent" />
-</shape>
