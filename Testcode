@@ -1,1 +1,166 @@
+package com.connect.connection
+
+import android.content.Intent
+import android.net.Uri
+import android.os.Bundle
+import android.widget.Button
+import android.widget.ImageView
+import android.widget.TextView
+import androidx.appcompat.app.AppCompatActivity
+
+class SummaryBActivity : AppCompatActivity() {
+
+    private lateinit var txtGatewayB: TextView
+    private lateinit var txtBedB: TextView
+    private lateinit var txtLocationB: TextView
+    private lateinit var imgPreviewB: ImageView
+    private lateinit var btnNextB: Button
+    private lateinit var btnBackB: Button
+
+    // Keep our own keys here so this Activity compiles independently
+    companion object {
+        const val EXTRA_GATEWAY = "gatewayId"
+        const val EXTRA_BED = "bedId"
+        const val EXTRA_LOCATION = "locationId"
+        const val EXTRA_IMAGE_URI = "imageUri"
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_summary_b)
+
+        // Bind UI
+        txtGatewayB = findViewById(R.id.txtGatewayB)
+        txtBedB = findViewById(R.id.txtBedB)
+        txtLocationB = findViewById(R.id.txtLocationB)
+        imgPreviewB = findViewById(R.id.imgPreviewB)
+        btnNextB = findViewById(R.id.btnNextB)
+        btnBackB = findViewById(R.id.btnBackB)
+
+        // Read what QRBActivity sent us
+        val gatewayId: String = intent.getStringExtra(EXTRA_GATEWAY).orEmpty()
+        val bedId: String = intent.getStringExtra(EXTRA_BED).orEmpty()
+        val locationId: String = intent.getStringExtra(EXTRA_LOCATION).orEmpty()
+        val imageUri: Uri? = intent.getStringExtra(EXTRA_IMAGE_URI)?.let { Uri.parse(it) }
+
+        // Populate UI
+        txtGatewayB.text = "Gateway: $gatewayId"
+        txtBedB.text = "Bed ID: $bedId"
+        txtLocationB.text = "Location ID: $locationId"
+        imageUri?.let { imgPreviewB.setImageURI(it) }
+
+        // Back just returns to QRBActivity
+        btnBackB.setOnClickListener { finish() }
+
+        // Next → Final SummaryActivity with all values
+        btnNextB.setOnClickListener {
+            val i = Intent(this, SummaryActivity::class.java).apply {
+                putExtra(EXTRA_GATEWAY, gatewayId)
+                putExtra(EXTRA_BED, bedId)
+                putExtra(EXTRA_LOCATION, locationId)
+                imageUri?.toString()?.let { putExtra(EXTRA_IMAGE_URI, it) }
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(i)
+        }
+    }
+}
+
+
+
+
+
+
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:padding="16dp">
+
+    <ImageView
+        android:id="@+id/imgPreviewB"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:scaleType="centerCrop"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toTopOf="@+id/txtGatewayB"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintVertical_bias="0.0" />
+
+    <TextView
+        android:id="@+id/txtGatewayB"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:text="Gateway:"
+        android:textStyle="bold"
+        android:textSize="16sp"
+        app:layout_constraintTop_toBottomOf="@id/imgPreviewB"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        android:layout_marginTop="12dp" />
+
+    <TextView
+        android:id="@+id/txtBedB"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:text="Bed ID:"
+        android:textSize="16sp"
+        app:layout_constraintTop_toBottomOf="@id/txtGatewayB"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        android:layout_marginTop="8dp" />
+
+    <TextView
+        android:id="@+id/txtLocationB"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:text="Location ID:"
+        android:textSize="16sp"
+        app:layout_constraintTop_toBottomOf="@id/txtBedB"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        android:layout_marginTop="8dp" />
+
+    <LinearLayout
+        android:id="@+id/bottomButtonsB"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:layout_marginTop="16dp"
+        app:layout_constraintTop_toBottomOf="@id/txtLocationB"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent">
+
+        <Button
+            android:id="@+id/btnBackB"
+            android:layout_width="0dp"
+            android:layout_height="48dp"
+            android:layout_weight="1"
+            android:text="BACK"
+            android:background="@drawable/btn_green_square"
+            android:textColor="@android:color/white"
+            android:layout_marginEnd="8dp" />
+
+        <Button
+            android:id="@+id/btnNextB"
+            android:layout_width="0dp"
+            android:layout_height="48dp"
+            android:layout_weight="1"
+            android:text="NEXT"
+            android:background="@drawable/btn_green_square"
+            android:textColor="@android:color/white"
+            android:layout_marginStart="8dp" />
+    </LinearLayout>
+
+</androidx.constraintlayout.widget.ConstraintLayout>
+
+
+
+
+
+
 
