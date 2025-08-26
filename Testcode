@@ -1,1 +1,230 @@
+package com.connect.connection
 
+import android.content.Intent
+import android.net.Uri
+import android.os.Bundle
+import android.widget.Button
+import android.widget.ImageView
+import android.widget.TextView
+import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
+import org.eclipse.paho.client.mqttv3.IMqttActionListener
+import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken
+import org.eclipse.paho.client.mqttv3.IMqttToken
+import org.eclipse.paho.client.mqttv3.MqttCallbackExtended
+import org.eclipse.paho.client.mqttv3.MqttMessage
+import org.json.JSONObject
+
+class SummaryBActivity : AppCompatActivity() {
+
+    // ---- UI ----
+    private lateinit var txtGateway: TextView
+    private lateinit var txtBed: TextView
+    private lateinit var txtLocation: TextView
+    private lateinit var txtInfo: TextView
+    private lateinit var imgPreview: ImageView
+    private lateinit var btnBack: Button
+    private lateinit var btnNext: Button
+
+    // ---- data passed from A/SummaryA/B ----
+    private var gatewayId: String = ""
+    private var bedId: String = ""
+    private var locationId: String = ""
+    private var imageUri: Uri? = null
+
+    // ---- MQTT + flow state ----
+    private var responseTopic: String? = null
+    private var waitTimeoutTask: Runnable? = null
+    private val waitTimeoutMs = 10_000L // 10 seconds; adjust if needed
+
+    companion object {
+        const val EXTRA_GATEWAY = "gatewayId"
+        const val EXTRA_BED = "bedId"
+        const val EXTRA_IMAGE_URI = "imageUri"
+        const val EXTRA_LOCATION = "locationId"
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_summary_b)
+
+        // ---- bind UI (ids must exist in activity_summary_b.xml) ----
+        txtGateway   = findViewById(R.id.txtGatewayB)
+        txtBed       = findViewById(R.id.txtBedB)
+        txtLocation  = findViewById(R.id.txtLocationB)
+        txtInfo      = findViewById(R.id.txtInfoB)
+        imgPreview   = findViewById(R.id.imgPreviewB)
+        btnBack      = findViewById(R.id.btnBackB)
+        btnNext      = findViewById(R.id.btnNextB)
+
+        // ---- read extras ----
+        gatewayId = intent.getStringExtra(EXTRA_GATEWAY).orEmpty()
+        bedId     = intent.getStringExtra(EXTRA_BED).orEmpty()
+        locationId= intent.getStringExtra(EXTRA_LOCATION).orEmpty()
+        intent.getStringExtra(EXTRA_IMAGE_URI)?.let { imageUri = Uri.parse(it) }
+
+        // ---- show on screen ----
+        txtGateway.text  = "Gateway: $gatewayId"
+        txtBed.text      = "Bed ID: $bedId"
+        txtLocation.text = "Location ID: $locationId"
+        imageUri?.let { imgPreview.setImageURI(it) }
+
+        btnBack.setOnClickListener { finish() }
+
+        btnNext.setOnClickListener {
+            if (gatewayId.isEmpty() || bedId.isEmpty() || locationId.isEmpty()) {
+                Toast.makeText(this, "Missing IDs", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            txtInfo.text = "Setting location..."
+            btnNext.isEnabled = false
+            performSetLocation()
+        }
+    }
+
+    // ====== REQUEST/REPLY over MQTT ======
+
+    private fun performSetLocation() {
+        val c = MqttHolder.client
+        if (c == null || !c.isConnected) {
+            txtInfo.text = "MQTT not connected"
+            btnNext.isEnabled = true
+            return
+        }
+
+        // exact response topic for THIS bed (must match your backend)
+        responseTopic = topicSetLocationResp(bedId)
+
+        // temporary callback to capture only our response
+        c.setCallback(object : MqttCallbackExtended {
+            override fun connectComplete(reconnect: Boolean, serverURI: String?) {}
+            override fun connectionLost(cause: Throwable?) {}
+
+            override fun messageArrived(topic: String?, message: MqttMessage?) {
+                if (topic == responseTopic) {
+                    cancelWaitTimeout()
+                    handleSetLocationResponse(message?.toString().orEmpty())
+                }
+            }
+            override fun deliveryComplete(token: IMqttDeliveryToken?) {}
+        })
+
+        // Subscribe FIRST, then publish the request
+        val resp = responseTopic!!
+        c.subscribe(resp, 1, null, object : IMqttActionListener {
+            override fun onSuccess(asyncActionToken: IMqttToken?) {
+                publishSetLocation(force = false)
+                startWaitTimeout()
+            }
+            override fun onFailure(asyncActionToken: IMqttToken?, exception: Throwable?) {
+                runOnUiThread {
+                    txtInfo.text = "Subscribe failed: ${exception?.message}"
+                    btnNext.isEnabled = true
+                }
+            }
+        })
+    }
+
+    private fun publishSetLocation(force: Boolean = false) {
+        val c = MqttHolder.client ?: return
+        val reqTopic = topicSetLocationReq(gatewayId)
+
+        val data = JSONObject().apply {
+            put("bedId", bedId)
+            put("locationId", locationId)
+            put("force", force)
+        }
+        val req = JSONObject().apply {
+            put("command", "set_location")
+            put("data", data)
+        }
+        val payload = req.toString().toByteArray(Charsets.UTF_8)
+
+        c.publish(reqTopic, payload, 1, false, null, object : IMqttActionListener {
+            override fun onSuccess(asyncActionToken: IMqttToken?) {
+                // waiting for response…
+            }
+            override fun onFailure(asyncActionToken: IMqttToken?, exception: Throwable?) {
+                runOnUiThread {
+                    txtInfo.text = "Publish failed: ${exception?.message}"
+                    btnNext.isEnabled = true
+                }
+                cancelWaitTimeout()
+            }
+        })
+    }
+
+    // Parse JSON reply and navigate to final SummaryActivity
+    private fun handleSetLocationResponse(json: String) {
+        try {
+            val root = JSONObject(json)
+            val status = root.optInt("status", -1)
+
+            // some servers echo location back in "data"
+            val loc = root.optJSONObject("data")
+                ?.optString("locationId")
+                ?.takeIf { it.isNotBlank() }
+                ?: locationId
+
+            // cleanup (unsubscribe + neutralize callback) before leaving
+            cleanupMqtt()
+
+            val i = Intent(this, SummaryActivity::class.java).apply {
+                putExtra("gatewayId", gatewayId)
+                putExtra("bedId", bedId)
+                putExtra("locationId", loc)
+                putExtra("status", status)
+            }
+            startActivity(i)
+            finish()
+
+        } catch (t: Throwable) {
+            runOnUiThread {
+                txtInfo.text = "Response parse error: ${t.message}"
+                btnNext.isEnabled = true
+            }
+        }
+    }
+
+    // ====== timeout / cleanup ======
+
+    private fun startWaitTimeout() {
+        cancelWaitTimeout()
+        waitTimeoutTask = Runnable {
+            runOnUiThread {
+                txtInfo.text = "No response — please retry."
+                btnNext.isEnabled = true
+            }
+            // keep the page open so user can tap NEXT again
+        }
+        txtInfo.postDelayed(waitTimeoutTask!!, waitTimeoutMs)
+    }
+
+    private fun cancelWaitTimeout() {
+        waitTimeoutTask?.let { txtInfo.removeCallbacks(it) }
+        waitTimeoutTask = null
+    }
+
+    private fun cleanupMqtt() {
+        try {
+            responseTopic?.let { MqttHolder.client?.unsubscribe(it) }
+            // Install a no-op callback instead of setCallback(null)
+            MqttHolder.client?.setCallback(object : MqttCallbackExtended {
+                override fun connectComplete(reconnect: Boolean, serverURI: String?) {}
+                override fun connectionLost(cause: Throwable?) {}
+                override fun messageArrived(topic: String?, message: MqttMessage?) {}
+                override fun deliveryComplete(token: IMqttDeliveryToken?) {}
+            })
+        } catch (_: Exception) { }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        cancelWaitTimeout()
+        cleanupMqtt()
+    }
+
+    // ====== topic helpers (MUST match your backend names) ======
+    private fun topicSetLocationReq(gw: String) = "gw/$gw/req/set_location"
+    private fun topicSetLocationResp(bed: String) = "bed/$bed/resp/set_location"
+}
