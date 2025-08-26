@@ -1,1 +1,220 @@
+package com.connect.connection
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Bundle
+import android.util.Size
+import android.widget.Button
+import android.widget.TextView
+import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AppCompatActivity
+import androidx.camera.core.*
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
+import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
+import com.google.mlkit.vision.barcode.Barcode
+import com.google.mlkit.vision.barcode.BarcodeScannerOptions
+import com.google.mlkit.vision.barcode.BarcodeScanning
+import com.google.mlkit.vision.common.InputImage
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Locale
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
+
+class QRActivity : AppCompatActivity() {
+
+    // UI
+    private lateinit var previewView: PreviewView
+    private lateinit var txtScanValue: TextView
+    private lateinit var btnRescan: Button
+    private lateinit var btnContinue: Button
+    private lateinit var btnCancel: Button
+
+    // CameraX
+    private lateinit var cameraExecutor: ExecutorService
+    private var imageCapture: ImageCapture? = null
+    private var analysis: ImageAnalysis? = null
+
+    // Scanner
+    private val analyzing = AtomicBoolean(true)
+    private var lastDecoded: String? = null
+
+    // permission
+    private val requestCameraPerm = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) startCamera() else {
+            Toast.makeText(this, "Camera permission denied", Toast.LENGTH_LONG).show()
+            finish()
+        }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_qra)  // <-- your A Activity layout
+
+        previewView = findViewById(R.id.previewView)
+        txtScanValue = findViewById(R.id.txtScanValue)
+        btnRescan = findViewById(R.id.btnRescan)
+        btnContinue = findViewById(R.id.btnContinue)
+        btnCancel = findViewById(R.id.btnCancel)
+
+        cameraExecutor = Executors.newSingleThreadExecutor()
+
+        btnRescan.setOnClickListener {
+            lastDecoded = null
+            txtScanValue.text = ""
+            analyzing.set(true)
+            Toast.makeText(this, "Ready to rescan…", Toast.LENGTH_SHORT).show()
+        }
+
+        btnCancel.setOnClickListener { finish() }
+
+        btnContinue.setOnClickListener {
+            val value = lastDecoded
+            if (value.isNullOrBlank()) {
+                Toast.makeText(this, "Scan a QR first", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            // Take a photo and then open summary with value + photo URI
+            takePhotoAndOpenSummary(value)
+        }
+
+        // permission -> camera
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
+            == PackageManager.PERMISSION_GRANTED
+        ) {
+            startCamera()
+        } else {
+            requestCameraPerm.launch(Manifest.permission.CAMERA)
+        }
+    }
+
+    private fun startCamera() {
+        val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
+        cameraProviderFuture.addListener({
+            val cameraProvider = cameraProviderFuture.get()
+
+            val preview = Preview.Builder()
+                .build()
+                .also { it.setSurfaceProvider(previewView.surfaceProvider) }
+
+            imageCapture = ImageCapture.Builder()
+                .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                .build()
+
+            // ML Kit barcode scanner (QR only is optional; we allow QR + AZTEC/ALL)
+            val options = BarcodeScannerOptions.Builder()
+                .setBarcodeFormats(
+                    Barcode.FORMAT_QR_CODE,
+                    Barcode.FORMAT_AZTEC
+                ).build()
+            val scanner = BarcodeScanning.getClient(options)
+
+            analysis = ImageAnalysis.Builder()
+                .setTargetResolution(Size(1280, 720))
+                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .build().apply {
+                    setAnalyzer(cameraExecutor) { proxy ->
+                        if (!analyzing.get()) {
+                            proxy.close()
+                            return@setAnalyzer
+                        }
+                        try {
+                            val mediaImage = proxy.image
+                            if (mediaImage != null) {
+                                val image = InputImage.fromMediaImage(
+                                    mediaImage, proxy.imageInfo.rotationDegrees
+                                )
+                                scanner.process(image)
+                                    .addOnSuccessListener { barcodes ->
+                                        if (barcodes.isNotEmpty()) {
+                                            val raw = barcodes.first().rawValue.orEmpty()
+                                            if (raw.isNotBlank()) {
+                                                analyzing.set(false)
+                                                lastDecoded = raw
+                                                runOnUiThread { txtScanValue.text = raw }
+                                            }
+                                        }
+                                    }
+                                    .addOnFailureListener {
+                                        // ignore, keep analyzing
+                                    }
+                                    .addOnCompleteListener {
+                                        proxy.close()
+                                    }
+                            } else {
+                                proxy.close()
+                            }
+                        } catch (_: Exception) {
+                            proxy.close()
+                        }
+                    }
+                }
+
+            val selector = CameraSelector.DEFAULT_BACK_CAMERA
+
+            // bind
+            cameraProvider.unbindAll()
+            cameraProvider.bindToLifecycle(
+                this, selector, preview, imageCapture, analysis
+            )
+        }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun takePhotoAndOpenSummary(value: String) {
+        val capture = imageCapture ?: run {
+            openSummary(value, uri = null) // fallback without a photo
+            return
+        }
+
+        // cache dir: .../cache/images/
+        val imagesDir = File(cacheDir, "images").apply { mkdirs() }
+        val name = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US)
+            .format(System.currentTimeMillis()) + ".jpg"
+        val photoFile = File(imagesDir, name)
+
+        val output = ImageCapture.OutputFileOptions.Builder(photoFile).build()
+
+        capture.takePicture(
+            output,
+            cameraExecutor,
+            object : ImageCapture.OnImageSavedCallback {
+                override fun onImageSaved(result: ImageCapture.OutputFileResults) {
+                    val uri: Uri = FileProvider.getUriForFile(
+                        this@QRActivity,
+                        "${applicationContext.packageName}.fileprovider",
+                        photoFile
+                    )
+                    runOnUiThread { openSummary(value, uri) }
+                }
+
+                override fun onError(e: ImageCaptureException) {
+                    // Couldn’t save photo; continue with just the decoded text
+                    runOnUiThread { openSummary(value, uri = null) }
+                }
+            }
+        )
+    }
+
+    private fun openSummary(value: String, uri: Uri?) {
+        val i = Intent(this, SummaryAActivity::class.java).apply {
+            putExtra("qrA_value", value)
+            uri?.let { putExtra("qrA_uri", it.toString()) }
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        startActivity(i)
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        try { analysis?.clearAnalyzer() } catch (_: Exception) {}
+        try { cameraExecutor.shutdown() } catch (_: Exception) {}
+    }
+}
