@@ -56,3 +56,107 @@ private fun startCamera() {
         analyzing.set(true)
     }, ContextCompat.getMainExecutor(this))
 }
+
+
+
+
+
+
+
+
+
+
+
+
+@OptIn(ExperimentalGetImage::class)
+private fun startCamera() {
+    val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
+
+    cameraProviderFuture.addListener({
+        val cameraProvider = cameraProviderFuture.get()
+
+        // --- Preview ---
+        val preview = Preview.Builder()
+            .setTargetRotation(previewView.display?.rotation ?: Surface.ROTATION_0)
+            .build().also { it.setSurfaceProvider(previewView.surfaceProvider) }
+
+        // --- Still Image capture (for saving a frame when you press Continue) ---
+        imageCapture = ImageCapture.Builder()
+            .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+            .setTargetRotation(previewView.display?.rotation ?: Surface.ROTATION_0)
+            .build()
+
+        // --- Analyzer for QR codes ---
+        val imageAnalysis = ImageAnalysis.Builder()
+            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+            .setTargetRotation(previewView.display?.rotation ?: Surface.ROTATION_0)
+            .build()
+
+        val scanner = BarcodeScanning.getClient(
+            BarcodeScannerOptions.Builder()
+                .setBarcodeFormats(Barcode.FORMAT_QR_CODE) // QR only (add more if you need)
+                .build()
+        )
+
+        imageAnalysis.setAnalyzer(cameraExecutor) { imageProxy ->
+            try {
+                val media = imageProxy.image ?: run {
+                    imageProxy.close(); return@setAnalyzer
+                }
+                val input = InputImage.fromMediaImage(media, imageProxy.imageInfo.rotationDegrees)
+
+                scanner.process(input)
+                    .addOnSuccessListener { codes ->
+                        val v = codes.firstOrNull()?.rawValue
+                        if (!v.isNullOrBlank()) {
+                            lastDecoded = v
+                            runOnUiThread {
+                                txtScanValue.text = v
+                                btnContinue.isEnabled = true
+                            }
+                        }
+                    }
+                    .addOnFailureListener { e ->
+                        Log.e("QR", "Scan failed", e)
+                    }
+                    .addOnCompleteListener {
+                        imageProxy.close()        // ALWAYS close the frame
+                    }
+            } catch (t: Throwable) {
+                Log.e("QR", "Analyzer crash", t)
+                imageProxy.close()
+            }
+        }
+
+        // --- Bind everything ---
+        val selector = CameraSelector.DEFAULT_BACK_CAMERA
+        cameraProvider.unbindAll()
+        cameraProvider.bindToLifecycle(
+            this, selector,
+            preview, imageCapture, imageAnalysis
+        )
+    }, ContextCompat.getMainExecutor(this))
+}
+
+
+
+
+
+private fun takePhoto(onSaved: (Uri) -> Unit, onError: (Exception) -> Unit) {
+    val photoFile = File(cacheDir, "qr_${System.currentTimeMillis()}.jpg")
+    val output = ImageCapture.OutputFileOptions.Builder(photoFile).build()
+
+    imageCapture.takePicture(
+        output,
+        cameraExecutor,
+        object : ImageCapture.OnImageSavedCallback {
+            override fun onImageSaved(result: ImageCapture.OutputFileResults) {
+                onSaved(Uri.fromFile(photoFile))
+            }
+            override fun onError(exc: ImageCaptureException) {
+                onError(exc)
+            }
+        }
+    )
+}
+
