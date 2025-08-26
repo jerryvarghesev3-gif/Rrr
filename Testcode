@@ -1,1 +1,183 @@
+package com.connect.connection
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Bundle
+import android.view.Surface
+import android.widget.Button
+import android.widget.TextView
+import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AppCompatActivity
+import androidx.camera.core.*
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
+import androidx.core.content.ContextCompat
+import com.google.mlkit.vision.barcode.Barcode
+import com.google.mlkit.vision.barcode.BarcodeScannerOptions
+import com.google.mlkit.vision.barcode.BarcodeScanning
+import com.google.mlkit.vision.common.InputImage
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
+
+class QRBActivity : AppCompatActivity() {
+
+    // ----- UI -----
+    private lateinit var previewView: PreviewView
+    private lateinit var txtScanValue: TextView
+    private lateinit var btnRescan: Button
+    private lateinit var btnContinue: Button
+    private lateinit var btnCancel: Button
+
+    // ----- camera/analyzer -----
+    private lateinit var cameraExecutor: ExecutorService
+    private var imageAnalysis: ImageAnalysis? = null
+    private val analyzing = AtomicBoolean(false)
+    private var lastDecoded: String? = null
+
+    // ----- inputs from A/SummaryA -----
+    private var gatewayId: String = ""
+    private var bedId: String = ""
+    private var incomingImageUri: Uri? = null
+
+    // new extra for B -> SummaryB / Summary
+    companion object {
+        const val EXTRA_LOCATION = "locationId"
+        private const val REQ_TEXT_AIM = "Aim at Location QR"
+    }
+
+    // permission launcher (modern API)
+    private val requestCameraPerm =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (granted) startCamera() else {
+                Toast.makeText(this, "Camera permission required", Toast.LENGTH_LONG).show()
+                finish()
+            }
+        }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_qrb)
+
+        // --- extras from A/summaryA ---
+        gatewayId = intent.getStringExtra(QRActivity.EXTRA_GATEWAY).orEmpty()
+        bedId = intent.getStringExtra(QRActivity.EXTRA_BED).orEmpty()
+        incomingImageUri = intent.getStringExtra(QRActivity.EXTRA_IMAGE_URI)?.let { Uri.parse(it) }
+
+        // --- bind UI (IDs must exist in activity_qrb.xml) ---
+        previewView = findViewById(R.id.previewView)       // keep same id name as A to avoid NPEs
+        txtScanValue = findViewById(R.id.txtScanValue)
+        btnRescan = findViewById(R.id.btnRescan)
+        btnContinue = findViewById(R.id.btnContinue)
+        btnCancel = findViewById(R.id.btnCancel)
+
+        txtScanValue.text = REQ_TEXT_AIM
+        btnContinue.isEnabled = false
+
+        cameraExecutor = Executors.newSingleThreadExecutor()
+
+        // --- buttons ---
+        btnRescan.setOnClickListener {
+            lastDecoded = null
+            txtScanValue.text = REQ_TEXT_AIM
+            btnContinue.isEnabled = false
+            analyzing.set(false) // allow analyzer to accept the next code
+        }
+
+        btnCancel.setOnClickListener { finish() }
+
+        btnContinue.setOnClickListener {
+            val loc = lastDecoded?.trim().orEmpty()
+            if (loc.isEmpty()) {
+                Toast.makeText(this, "Scan a Location QR first", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            openSummaryB(loc)
+        }
+
+        // --- permission + start ---
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
+            == PackageManager.PERMISSION_GRANTED
+        ) {
+            startCamera()
+        } else {
+            requestCameraPerm.launch(Manifest.permission.CAMERA)
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        try { imageAnalysis?.clearAnalyzer() } catch (_: Exception) {}
+        try { cameraExecutor.shutdown() } catch (_: Exception) {}
+    }
+
+    // ================= Camera / ML Kit =================
+    private fun startCamera() {
+        val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
+
+        cameraProviderFuture.addListener({
+            val cameraProvider = cameraProviderFuture.get()
+
+            // Preview
+            val preview = Preview.Builder()
+                .setTargetRotation(previewView.display?.rotation ?: Surface.ROTATION_0)
+                .build().also { it.setSurfaceProvider(previewView.surfaceProvider) }
+
+            // Analyzer for QR Codes (Location)
+            val options = BarcodeScannerOptions.Builder()
+                .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
+                .build()
+            val scanner = BarcodeScanning.getClient(options)
+
+            imageAnalysis = ImageAnalysis.Builder()
+                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .setTargetRotation(previewView.display?.rotation ?: Surface.ROTATION_0)
+                .build()
+
+            imageAnalysis!!.setAnalyzer(cameraExecutor) { imageProxy ->
+                try {
+                    val media = imageProxy.image ?: run { imageProxy.close(); return@setAnalyzer }
+                    // if we already decoded and haven't been reset -> skip
+                    if (analyzing.get()) { imageProxy.close(); return@setAnalyzer }
+
+                    val input = InputImage.fromMediaImage(media, imageProxy.imageInfo.rotationDegrees)
+                    scanner.process(input)
+                        .addOnSuccessListener { codes ->
+                            val v = codes.firstOrNull()?.rawValue
+                            if (!v.isNullOrBlank() && analyzing.compareAndSet(false, true)) {
+                                lastDecoded = v.trim()
+                                runOnUiThread {
+                                    txtScanValue.text = lastDecoded
+                                    btnContinue.isEnabled = true
+                                }
+                            }
+                        }
+                        .addOnFailureListener {
+                            // keep analyzing; just log/ignore
+                        }
+                        .addOnCompleteListener { imageProxy.close() }
+                } catch (_: Throwable) {
+                    imageProxy.close()
+                }
+            }
+
+            val selector = CameraSelector.DEFAULT_BACK_CAMERA
+            cameraProvider.unbindAll()
+            cameraProvider.bindToLifecycle(this, selector, preview, imageAnalysis)
+
+        }, ContextCompat.getMainExecutor(this))
+    }
+
+    // =============== Navigation ===============
+    private fun openSummaryB(locationId: String) {
+        val i = android.content.Intent(this, SummaryBActivity::class.java).apply {
+            putExtra(QRActivity.EXTRA_GATEWAY, gatewayId)
+            putExtra(QRActivity.EXTRA_BED, bedId)
+            putExtra(EXTRA_LOCATION, locationId)
+            incomingImageUri?.let { putExtra(QRActivity.EXTRA_IMAGE_URI, it.toString()) }
+        }
+        startActivity(i)
+    }
+}
