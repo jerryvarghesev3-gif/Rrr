@@ -1,1 +1,58 @@
+private fun startCamera() {
+    val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
+    cameraProviderFuture.addListener({
+        val cameraProvider = cameraProviderFuture.get()
 
+        val preview = Preview.Builder().build().also {
+            it.setSurfaceProvider(previewView.surfaceProvider)
+        }
+
+        imageCapture = ImageCapture.Builder()
+            .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+            .build()
+
+        val imageAnalysis = ImageAnalysis.Builder()
+            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+            .build()
+
+        imageAnalysis.setAnalyzer(cameraExecutor) { proxy ->
+            val mediaImage = proxy.image
+            if (mediaImage == null) { proxy.close(); return@setAnalyzer }
+
+            // Don’t hammer ML Kit if we already have a value
+            if (!analyzing.get()) { proxy.close(); return@setAnalyzer }
+
+            val rotation = proxy.imageInfo.rotationDegrees
+            val image = InputImage.fromMediaImage(mediaImage, rotation)
+
+            barcodeScanner.process(image)
+                .addOnSuccessListener { barcodes ->
+                    val first = barcodes.firstOrNull()?.rawValue
+                    if (!first.isNullOrBlank()) {
+                        // stop further analysis until user taps RESCAN
+                        if (analyzing.compareAndSet(true, false)) {
+                            lastDecoded = first
+                            runOnUiThread { txtScanValue.text = first }
+                        }
+                    }
+                }
+                .addOnFailureListener {
+                    // ignore; keep analyzing next frame
+                }
+                .addOnCompleteListener {
+                    // ALWAYS close the frame
+                    proxy.close()
+                }
+        }
+
+        val selector = CameraSelector.DEFAULT_BACK_CAMERA
+
+        cameraProvider.unbindAll()
+        cameraProvider.bindToLifecycle(
+            this, selector, preview, imageCapture, imageAnalysis
+        )
+
+        // allow scanning immediately
+        analyzing.set(true)
+    }, ContextCompat.getMainExecutor(this))
+}
