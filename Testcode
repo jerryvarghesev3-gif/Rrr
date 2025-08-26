@@ -1,1 +1,51 @@
+class SummaryActivity : AppCompatActivity() {
 
+    private lateinit var imgPreview: ImageView
+    private lateinit var txtGateway: TextView
+    private lateinit var txtBed: TextView
+    private lateinit var txtLocation: TextView
+    private lateinit var btnDone: Button
+
+    private var gatewayId = ""
+    private var bedId = ""
+    private var locationId = ""
+    private var imageUri: Uri? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_summary) // your final summary layout
+
+        imgPreview  = findViewById(R.id.imgPreview)
+        txtGateway  = findViewById(R.id.txtGateway)
+        txtBed      = findViewById(R.id.txtBed)
+        txtLocation = findViewById(R.id.txtLocation)
+        btnDone     = findViewById(R.id.btnDone)
+
+        // 1) Read extras supplied by A/SummaryA and B/SummaryB
+        gatewayId  = intent.getStringExtra(AActivity.EXTRA_GATEWAY).orEmpty()
+        bedId      = intent.getStringExtra(AActivity.EXTRA_BED).orEmpty()
+        locationId = intent.getStringExtra(QRBActivity.EXTRA_LOCATION).orEmpty()
+        imageUri   = intent.getStringExtra(AActivity.EXTRA_IMAGE_URI)?.let { Uri.parse(it) }
+
+        // 2) Display them
+        txtGateway.text  = "Gateway: $gatewayId"
+        txtBed.text      = "Bed ID: $bedId"
+        txtLocation.text = "Location ID: $locationId"
+        imageUri?.let { imgPreview.setImageURI(it) }
+
+        // 3) Kick your existing set-location flow when appropriate
+        //    (choose one: auto, or on "Done" click)
+        // auto:
+        // performSetLocation(gatewayId, bedId, locationId)
+
+        btnDone.setOnClickListener {
+            performSetLocation(gatewayId, bedId, locationId)
+        }
+    }
+
+    // Keep your existing implementation; just ensure it uses the three values above
+    private fun performSetLocation(gateway: String, bed: String, location: String) {
+        // your old MQTT publish / result handling
+        // update UI with ✅ / ❌ as you already did
+    }
+}
