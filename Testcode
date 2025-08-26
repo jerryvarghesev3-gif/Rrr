@@ -1,1 +1,291 @@
+package com.connect.connection
+
+import android.Manifest
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import android.widget.Button
+import android.widget.TextView
+import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AppCompatActivity
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageAnalysis
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
+import androidx.core.content.ContextCompat
+import com.google.mlkit.vision.barcode.Barcode
+import com.google.mlkit.vision.barcode.BarcodeScannerOptions
+import com.google.mlkit.vision.barcode.BarcodeScanning
+import com.google.mlkit.vision.common.InputImage
+import com.connect.connection.NavKeys.EXTRA_BED
+import com.connect.connection.NavKeys.EXTRA_GATEWAY
+import com.connect.connection.NavKeys.EXTRA_IMAGE_URI
+import com.connect.connection.NavKeys.EXTRA_LOCATION
+
+class BActivity : AppCompatActivity() {
+
+    // UI
+    private lateinit var previewViewB: PreviewView
+    private lateinit var txtScanValue: TextView
+    private lateinit var btnRescan: Button
+    private lateinit var btnContinue: Button
+    private lateinit var btnCancel: Button
+
+    // Data carried from A/SummaryA
+    private var gatewayId: String = ""
+    private var bedId: String = ""
+    private var imageUri: Uri? = null
+
+    // Location result here
+    private var locationId: String? = null
+
+    // permission launcher
+    private val requestCameraPerm =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (granted) startCameraB() else finish()
+        }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        // Must match your activity_qrb.xml
+        setContentView(R.layout.activity_qrb)
+
+        // -------- read extras from previous screen --------
+        gatewayId = intent.getStringExtra(EXTRA_GATEWAY).orEmpty()
+        bedId = intent.getStringExtra(EXTRA_BED).orEmpty()
+        intent.getStringExtra(EXTRA_IMAGE_URI)?.let { imageUri = Uri.parse(it) }
+
+        // -------- bind UI (IDs must exist in activity_qrb.xml) --------
+        previewViewB = findViewById(R.id.previewViewB)   // or R.id.previewView if that’s your id
+        txtScanValue = findViewById(R.id.txtScanValue)
+        btnRescan    = findViewById(R.id.btnRescan)
+        btnContinue  = findViewById(R.id.btnContinue)
+        btnCancel    = findViewById(R.id.btnCancel)
+
+        txtScanValue.text = "Aim at Location QR"
+        btnContinue.isEnabled = false
+
+        btnRescan.setOnClickListener {
+            locationId = null
+            txtScanValue.text = "Aim at Location QR"
+            btnContinue.isEnabled = false
+        }
+
+        btnCancel.setOnClickListener { finish() }
+
+        btnContinue.setOnClickListener {
+            val loc = locationId?.trim().orEmpty()
+            if (loc.isEmpty()) {
+                Toast.makeText(this, "Scan a Location QR first", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            // forward everything we have to SummaryB
+            val i = Intent(this, SummaryBActivity::class.java).apply {
+                putExtra(EXTRA_GATEWAY, gatewayId)
+                putExtra(EXTRA_BED, bedId)
+                putExtra(EXTRA_LOCATION, loc)
+                imageUri?.toString()?.let { putExtra(EXTRA_IMAGE_URI, it) }
+            }
+            startActivity(i)
+        }
+
+        // camera permission
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            requestCameraPerm.launch(Manifest.permission.CAMERA)
+        } else {
+            startCameraB()
+        }
+    }
+
+    // -------- CameraX + ML Kit QR for LOCATION --------
+    private fun startCameraB() {
+        val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
+        cameraProviderFuture.addListener({
+            val cameraProvider = cameraProviderFuture.get()
+
+            val preview = androidx.camera.core.Preview.Builder().build().also {
+                // IMPORTANT: Surface provider must be set on the *same* view you bound
+                it.setSurfaceProvider(previewViewB.surfaceProvider)
+            }
+
+            val analysis = ImageAnalysis.Builder()
+                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .build()
+
+            // ML Kit scanner
+            val barcodeOptions = BarcodeScannerOptions.Builder()
+                .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
+                .build()
+            val scanner = BarcodeScanning.getClient(barcodeOptions)
+
+            analysis.setAnalyzer(ContextCompat.getMainExecutor(this)) { proxy ->
+                val media = proxy.image ?: return@setAnalyzer proxy.close()
+                val rotation = proxy.imageInfo.rotationDegrees
+                val image = InputImage.fromMediaImage(media, rotation)
+
+                scanner.process(image)
+                    .addOnSuccessListener { barcodes ->
+                        val value = barcodes.firstOrNull()?.rawValue
+                        if (!value.isNullOrBlank()) {
+                            locationId = value.trim()
+                            txtScanValue.text = locationId
+                            btnContinue.isEnabled = true
+                        }
+                    }
+                    .addOnCompleteListener { proxy.close() }
+            }
+
+            val selector = CameraSelector.DEFAULT_BACK_CAMERA
+
+            cameraProvider.unbindAll()
+            cameraProvider.bindToLifecycle(this, selector, preview, analysis)
+        }, ContextCompat.getMainExecutor(this))
+    }
+}
+
+
+
+
+
+
+
+package com.connect.connection
+
+import android.content.Intent
+import android.net.Uri
+import android.os.Bundle
+import android.widget.Button
+import android.widget.ImageView
+import android.widget.TextView
+import androidx.appcompat.app.AppCompatActivity
+import com.connect.connection.NavKeys.EXTRA_BED
+import com.connect.connection.NavKeys.EXTRA_GATEWAY
+import com.connect.connection.NavKeys.EXTRA_IMAGE_URI
+import com.connect.connection.NavKeys.EXTRA_LOCATION
+
+class SummaryBActivity : AppCompatActivity() {
+
+    private var gatewayId: String = ""
+    private var bedId: String = ""
+    private var locationId: String = ""
+    private var imageUri: Uri? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        // Must match your activity_summary_b.xml
+        setContentView(R.layout.activity_summary_b)
+
+        // read extras
+        gatewayId = intent.getStringExtra(EXTRA_GATEWAY).orEmpty()
+        bedId     = intent.getStringExtra(EXTRA_BED).orEmpty()
+        locationId= intent.getStringExtra(EXTRA_LOCATION).orEmpty()
+        intent.getStringExtra(EXTRA_IMAGE_URI)?.let { imageUri = Uri.parse(it) }
+
+        // bind UI (all are optional-safe; will simply no-op if ids differ)
+        findViewById<TextView?>(R.id.txtGatewayB)?.text  = "Gateway: $gatewayId"
+        findViewById<TextView?>(R.id.txtBedB)?.text      = "Bed ID: $bedId"
+        findViewById<TextView?>(R.id.txtLocationB)?.text = "Location ID: $locationId"
+        imageUri?.let { uri ->
+            findViewById<ImageView?>(R.id.imgPreviewB)?.setImageURI(uri)
+        }
+
+        findViewById<Button?>(R.id.btnBackB)?.setOnClickListener { finish() }
+        findViewById<Button?>(R.id.btnNextB)?.setOnClickListener {
+            // forward everything to the final Summary
+            val i = Intent(this, SummaryActivity::class.java).apply {
+                putExtra(EXTRA_GATEWAY, gatewayId)
+                putExtra(EXTRA_BED, bedId)
+                putExtra(EXTRA_LOCATION, locationId)
+                imageUri?.toString()?.let { putExtra(EXTRA_IMAGE_URI, it) }
+            }
+            startActivity(i)
+        }
+    }
+}
+
+
+
+
+
+
+package com.connect.connection
+
+import android.net.Uri
+import android.os.Bundle
+import android.widget.Button
+import android.widget.ImageView
+import android.widget.TextView
+import androidx.appcompat.app.AppCompatActivity
+import com.connect.connection.NavKeys.EXTRA_BED
+import com.connect.connection.NavKeys.EXTRA_GATEWAY
+import com.connect.connection.NavKeys.EXTRA_IMAGE_URI
+import com.connect.connection.NavKeys.EXTRA_LOCATION
+
+class SummaryActivity : AppCompatActivity() {
+
+    private var gatewayId: String = ""
+    private var bedId: String = ""
+    private var locationId: String = ""
+    private var imageUri: Uri? = null
+
+    private var txtStatus: TextView? = null
+    private var txtGateway: TextView? = null
+    private var txtBed: TextView? = null
+    private var txtLocation: TextView? = null
+    private var imgPreview: ImageView? = null
+    private var btnDone: Button? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        // Use your existing final summary layout
+        setContentView(R.layout.activity_summary)
+
+        // read
+        gatewayId = intent.getStringExtra(EXTRA_GATEWAY).orEmpty()
+        bedId     = intent.getStringExtra(EXTRA_BED).orEmpty()
+        locationId= intent.getStringExtra(EXTRA_LOCATION).orEmpty()
+        intent.getStringExtra(EXTRA_IMAGE_URI)?.let { imageUri = Uri.parse(it) }
+
+        // optional-safe binds
+        txtStatus   = findViewById(R.id.txtStatus)
+        txtGateway  = findViewById(R.id.txtGateway)
+        txtBed      = findViewById(R.id.txtBed)
+        txtLocation = findViewById(R.id.txtLocation)
+        imgPreview  = findViewById(R.id.imgPreview)
+        btnDone     = findViewById(R.id.btnDone)
+
+        // show values
+        txtGateway?.text  = "Gateway: $gatewayId"
+        txtBed?.text      = "Bed ID: $bedId"
+        txtLocation?.text = "Location ID: $locationId"
+        imageUri?.let { imgPreview?.setImageURI(it) }
+
+        txtStatus?.text = "Setting location…"
+
+        // ---- call your existing MQTT set_location here ----
+        // Example: publishSetLocation(gatewayId, bedId, locationId) { success -> ... }
+        // For now we just demonstrate the API to update the UI:
+        // onSetLocationSuccess() / onSetLocationFailed()
+        // ---------------------------------------------------
+
+        btnDone?.setOnClickListener { finish() }
+    }
+
+    // Call these from your MQTT reply handler
+    fun onSetLocationSuccess() {
+        txtStatus?.text = "✓ set_location succeeded"
+    }
+
+    fun onSetLocationFailed() {
+        txtStatus?.text = "✗ set_location failed"
+    }
+}
+
+
+
+
+
+
 
