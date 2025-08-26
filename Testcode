@@ -1,1 +1,139 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/rootSummaryB"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:padding="16dp">
 
+    <!-- Captured photo preview -->
+    <ImageView
+        android:id="@+id/imgPreviewB"
+        android:layout_width="0dp"
+        android:layout_height="220dp"
+        android:scaleType="centerCrop"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        tools:src="@android:drawable/ic_menu_report_image" />
+
+    <!-- Status / info (“Setting location…”, errors, etc.) -->
+    <TextView
+        android:id="@+id/txtInfoB"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:textAppearance="?android:attr/textAppearanceMedium"
+        android:textColor="@android:color/black"
+        android:paddingTop="12dp"
+        app:layout_constraintTop_toBottomOf="@id/imgPreviewB"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        tools:text="Setting location…" />
+
+    <!-- Gateway -->
+    <TextView
+        android:id="@+id/txtGatewayB"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:textAppearance="?android:attr/textAppearanceMedium"
+        android:textStyle="bold"
+        android:paddingTop="12dp"
+        app:layout_constraintTop_toBottomOf="@id/txtInfoB"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        tools:text="Gateway: GW-12345" />
+
+    <!-- Bed -->
+    <TextView
+        android:id="@+id/txtBedB"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:textAppearance="?android:attr/textAppearanceMedium"
+        android:paddingTop="8dp"
+        app:layout_constraintTop_toBottomOf="@id/txtGatewayB"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        tools:text="Bed ID: BED-001" />
+
+    <!-- Location -->
+    <TextView
+        android:id="@+id/txtLocationB"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:textAppearance="?android:attr/textAppearanceMedium"
+        android:paddingTop="8dp"
+        app:layout_constraintTop_toBottomOf="@id/txtBedB"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        tools:text="Location ID: 5e4fd27b-..." />
+
+    <!-- Back -->
+    <Button
+        android:id="@+id/btnBackB"
+        android:layout_width="0dp"
+        android:layout_height="56dp"
+        android:text="BACK"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toStartOf="@id/btnNextB"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintHorizontalChainStyle="packed"
+        app:layout_constraintWidth_percent="0.48" />
+
+    <!-- Next -->
+    <Button
+        android:id="@+id/btnNextB"
+        android:layout_width="0dp"
+        android:layout_height="56dp"
+        android:text="NEXT"
+        app:layout_constraintStart_toEndOf="@id/btnBackB"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintWidth_percent="0.48"
+        android:layout_marginStart="12dp" />
+
+</androidx.constraintlayout.widget.ConstraintLayout>
+
+
+
+
+
+
+
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:padding="20dp">
+
+    <TextView
+        android:id="@+id/summaryText"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:textAppearance="?android:attr/textAppearanceMedium"
+        android:lineSpacingExtra="4dp"
+        android:textColor="@android:color/black"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toTopOf="@id/btnDone"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        tools:text="✅ Location set OK\nGateway: GW-12345\nBed ID: BED-001\nLocation ID: 5e4fd27b-..." />
+
+    <Button
+        android:id="@+id/btnDone"
+        android:layout_width="0dp"
+        android:layout_height="56dp"
+        android:text="DONE"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent" />
+
+</androidx.constraintlayout.widget.ConstraintLayout>
+
+
+
+l
