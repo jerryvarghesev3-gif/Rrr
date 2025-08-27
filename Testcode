@@ -1,1 +1,338 @@
+package com.connect.connection
+
+import android.Manifest
+import android.content.ContentValues
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import android.provider.MediaStore
+import android.widget.TextView
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AppCompatActivity
+import androidx.camera.core.*
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
+import androidx.core.content.ContextCompat
+import com.google.mlkit.vision.barcode.Barcode
+import com.google.mlkit.vision.barcode.BarcodeScannerOptions
+import com.google.mlkit.vision.barcode.BarcodeScanning
+import com.google.mlkit.vision.common.InputImage
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
+
+class AActivity : AppCompatActivity() {
+
+    companion object {
+        const val EXTRA_BED = "bedId"
+        const val EXTRA_IMAGE_URI = "imageUri"
+        private const val TAG = "QRA"
+    }
+
+    private lateinit var previewView: PreviewView
+    private lateinit var txtHint: TextView
+
+    private var imageCapture: ImageCapture? = null
+    private var imageAnalysis: ImageAnalysis? = null
+    private var cameraExecutor: ExecutorService? = null
+
+    private val takingResult = AtomicBoolean(false)
+    private var lastDecoded: String? = null
+
+    private val askCameraPerm = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) startCamera() else finish()
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_qra)
+
+        previewView = findViewById(R.id.previewViewA)
+        txtHint = findViewById(R.id.txtHintA)
+
+        cameraExecutor = Executors.newSingleThreadExecutor()
+
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
+            == android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            startCamera()
+        } else {
+            askCameraPerm.launch(Manifest.permission.CAMERA)
+        }
+    }
+
+    private fun startCamera() {
+        val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
+        cameraProviderFuture.addListener({
+            val provider = cameraProviderFuture.get()
+
+            val preview = Preview.Builder().build().also {
+                it.setSurfaceProvider(previewView.surfaceProvider)
+            }
+
+            imageCapture = ImageCapture.Builder()
+                .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                .build()
+
+            val options = BarcodeScannerOptions.Builder()
+                .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
+                .build()
+            val scanner = BarcodeScanning.getClient(options)
+
+            imageAnalysis = ImageAnalysis.Builder()
+                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .build().apply {
+                    setAnalyzer(cameraExecutor!!) { proxy ->
+                        try {
+                            val mediaImage = proxy.image ?: return@setAnalyzer
+                            val rotation = proxy.imageInfo.rotationDegrees
+                            val image = InputImage.fromMediaImage(mediaImage, rotation)
+                            scanner.process(image)
+                                .addOnSuccessListener { barcodes ->
+                                    val text = barcodes.firstOrNull()?.rawValue?.trim()
+                                    if (!text.isNullOrEmpty() && text != lastDecoded) {
+                                        lastDecoded = text
+                                        captureThenGo(text)
+                                    }
+                                }
+                                .addOnCompleteListener { proxy.close() }
+                        } catch (_: Exception) {
+                            proxy.close()
+                        }
+                    }
+                }
+
+            try {
+                provider.unbindAll()
+                provider.bindToLifecycle(
+                    this,
+                    CameraSelector.DEFAULT_BACK_CAMERA,
+                    preview,
+                    imageCapture,
+                    imageAnalysis
+                )
+            } catch (_: Exception) {}
+        }, ContextCompat.getMainExecutor(this))
+
+        txtHint.text = "Aim at Bed QR…"
+    }
+
+    private fun captureThenGo(bedId: String) {
+        if (!takingResult.compareAndSet(false, true)) return
+
+        val cap = imageCapture
+        if (cap == null) {
+            goToSummary(bedId, null)
+            return
+        }
+
+        // Save into MediaStore (no FileProvider needed on API 29+)
+        val name = "bed_${System.currentTimeMillis()}.jpg"
+        val resolver = contentResolver
+        val contentValues = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, name)
+            put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Connection")
+            }
+        }
+        val outUri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
+
+        val output = ImageCapture.OutputFileOptions.Builder(resolver, outUri!!, contentValues).build()
+        cap.takePicture(output, ContextCompat.getMainExecutor(this),
+            object : ImageCapture.OnImageSavedCallback {
+                override fun onImageSaved(result: ImageCapture.OutputFileResults) {
+                    goToSummary(bedId, result.savedUri ?: outUri)
+                }
+                override fun onError(exception: ImageCaptureException) {
+                    goToSummary(bedId, null)
+                }
+            })
+    }
+
+    private fun goToSummary(bedId: String, photo: Uri?) {
+        val i = Intent(this, SummaryAActivity::class.java).apply {
+            putExtra(EXTRA_BED, bedId)
+            photo?.let { putExtra(EXTRA_IMAGE_URI, it.toString()) }
+        }
+        startActivity(i)
+        // Let the user rescan with Back if they want; don’t finish here.
+        takingResult.set(false)
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        try {
+            imageAnalysis?.clearAnalyzer()
+        } catch (_: Exception) {}
+        cameraExecutor?.shutdown()
+    }
+}
+
+
+
+
+
+
+
+
+package com.connect.connection
+
+import android.content.Intent
+import android.net.Uri
+import android.os.Bundle
+import android.widget.Button
+import android.widget.ImageView
+import android.widget.TextView
+import androidx.appcompat.app.AppCompatActivity
+
+class SummaryAActivity : AppCompatActivity() {
+
+    private lateinit var txtTitle: TextView
+    private lateinit var txtBed: TextView
+    private lateinit var imgPreview: ImageView
+    private lateinit var btnRescan: Button
+    private lateinit var btnCancel: Button
+    private lateinit var btnContinue: Button
+
+    private var bedId: String = ""
+    private var imageUri: Uri? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_summary_a)
+
+        txtTitle = findViewById(R.id.txtTitleA)
+        txtBed = findViewById(R.id.txtBedA)
+        imgPreview = findViewById(R.id.imgPreviewA)
+        btnRescan = findViewById(R.id.btnRescanA)
+        btnCancel = findViewById(R.id.btnCancelA)
+        btnContinue = findViewById(R.id.btnContinueA)
+
+        bedId = intent.getStringExtra(AActivity.EXTRA_BED).orEmpty()
+        intent.getStringExtra(AActivity.EXTRA_IMAGE_URI)?.let { imageUri = Uri.parse(it) }
+
+        txtTitle.text = "Bed QR detected"
+        txtBed.text = "Bed ID: $bedId"
+        imageUri?.let { imgPreview.setImageURI(it) }
+
+        btnRescan.setOnClickListener { finish() }              // back to scanner A
+        btnCancel.setOnClickListener { finishAffinity() }      // exit flow
+        btnContinue.setOnClickListener {
+            // → go to your B scanner
+            val i = Intent(this, QRBActivity::class.java).apply {
+                putExtra(AActivity.EXTRA_BED, bedId)
+                imageUri?.let { putExtra(AActivity.EXTRA_IMAGE_URI, it.toString()) }
+            }
+            startActivity(i)
+        }
+    }
+}
+
+
+
+
+
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#000">
+
+    <androidx.camera.view.PreviewView
+        android:id="@+id/previewViewA"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- bottom hint -->
+    <TextView
+        android:id="@+id/txtHintA"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:padding="12dp"
+        android:text="Aim at Bed QR…"
+        android:textColor="#FFFFFF"
+        android:textSize="16sp"
+        android:background="#80000000" />
+</FrameLayout>
+
+
+
+
+
+
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp"
+    android:background="#111">
+
+    <TextView
+        android:id="@+id/txtTitleA"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Bed QR detected"
+        android:textColor="#FFFFFF"
+        android:textStyle="bold"
+        android:textSize="18sp"
+        android:paddingBottom="8dp" />
+
+    <ImageView
+        android:id="@+id/imgPreviewA"
+        android:layout_width="match_parent"
+        android:layout_height="220dp"
+        android:adjustViewBounds="true"
+        android:scaleType="centerCrop"
+        android:background="#222"
+        android:contentDescription="Captured image" />
+
+    <TextView
+        android:id="@+id/txtBedA"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textColor="#FFFFFF"
+        android:textSize="16sp"
+        android:paddingTop="12dp"
+        android:text="Bed ID:" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="end"
+        android:paddingTop="24dp">
+
+        <Button
+            android:id="@+id/btnRescanA"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="RESCAN" />
+
+        <Button
+            android:id="@+id/btnCancelA"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="CANCEL"
+            android:layout_marginStart="12dp" />
+
+        <Button
+            android:id="@+id/btnContinueA"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="CONTINUE"
+            android:layout_marginStart="12dp" />
+    </LinearLayout>
+
+</LinearLayout>
+
+
+
+
+
 
