@@ -1,1 +1,149 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <!-- Live camera preview -->
+    <androidx.camera.view.PreviewView
+        android:id="@+id/previewViewB"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="centerCrop" />
+
+    <!-- Overlay for showing scanned result -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:orientation="vertical"
+        android:padding="16dp"
+        android:background="#80000000">
+
+        <TextView
+            android:id="@+id/txtScanValueB"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Scan a Location QR..."
+            android:textColor="@android:color/white"
+            android:textSize="18sp"
+            android:padding="4dp" />
+
+        <ImageView
+            android:id="@+id/imgPreviewB"
+            android:layout_width="match_parent"
+            android:layout_height="200dp"
+            android:adjustViewBounds="true"
+            android:scaleType="centerCrop"
+            android:background="@android:color/darker_gray" />
+
+    </LinearLayout>
+
+</FrameLayout>
+
+
+
+
+
+
+
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="vertical"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:padding="16dp"
+    android:gravity="center_horizontal"
+    android:background="@android:color/white">
+
+    <TextView
+        android:id="@+id/txtGatewayB"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Gateway: "
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:padding="8dp" />
+
+    <TextView
+        android:id="@+id/txtBedB"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Bed ID: "
+        android:textSize="18sp"
+        android:padding="8dp" />
+
+    <TextView
+        android:id="@+id/txtLocationB"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Location ID: "
+        android:textSize="18sp"
+        android:padding="8dp" />
+
+    <TextView
+        android:id="@+id/txtInfoB"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text=""
+        android:textSize="16sp"
+        android:textColor="@android:color/holo_blue_dark"
+        android:padding="8dp" />
+
+    <ImageView
+        android:id="@+id/imgPreviewB"
+        android:layout_width="200dp"
+        android:layout_height="200dp"
+        android:layout_margin="16dp"
+        android:adjustViewBounds="true"
+        android:scaleType="centerCrop"
+        android:background="@android:color/darker_gray" />
+
+    <!-- Buttons row -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:layout_marginTop="24dp">
+
+        <Button
+            android:id="@+id/btnRescanB"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="RESCAN" />
+
+        <Button
+            android:id="@+id/btnCancelB"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="CANCEL"
+            android:layout_marginStart="8dp"
+            android:layout_marginEnd="8dp" />
+
+        <Button
+            android:id="@+id/btnContinueB"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="CONTINUE" />
+
+    </LinearLayout>
+
+    <!-- Progress indicator for MQTT -->
+    <ProgressBar
+        android:id="@+id/progressB"
+        style="?android:attr/progressBarStyleLarge"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="24dp"
+        android:visibility="gone" />
+
+</LinearLayout>
+
+
+
+
+
 
