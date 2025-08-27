@@ -159,3 +159,37 @@
     android:layout_gravity="center"/>
 
 
+
+
+
+
+
+
+// Check IDs
+if (gatewayId.isBlank() || bedId.isBlank() || locationId.isBlank()) {
+    Toast.makeText(this, "Missing IDs", Toast.LENGTH_SHORT).show()
+    return
+}
+
+// Use MQTT client
+val c = mqtt ?: run {
+    Toast.makeText(this, "MQTT not connected", Toast.LENGTH_SHORT).show()
+    return
+}
+
+// Subscribe to bed response
+val responseTopic = respTopicBed(bedId)
+c.subscribe(responseTopic, 1, null)
+
+// Publish set_location request
+val payload = """{
+    "gateway_id": "$gatewayId",
+    "bed_id": "$bedId",
+    "location_id": "$locationId"
+}"""
+
+c.publish("gw/$gatewayId/req/set_location",
+    payload.toByteArray(),
+    1,
+    false)
+
