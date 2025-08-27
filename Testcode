@@ -409,3 +409,242 @@ class BActivity : AppCompatActivity() {
 
 
 
+
+
+
+
+
+package com.connect.connection
+
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import android.widget.ImageView
+import android.widget.TextView
+import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AppCompatActivity
+import androidx.camera.core.*
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
+import androidx.core.content.ContextCompat
+import com.google.mlkit.vision.barcode.BarcodeScanning
+import com.google.mlkit.vision.common.InputImage
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Locale
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
+
+class BActivity : AppCompatActivity() {
+
+    companion object {
+        const val EXTRA_GATEWAY   = "gatewayId"
+        const val EXTRA_BED       = "bedId"
+        const val EXTRA_LOCATION  = "locationId"
+        const val EXTRA_IMAGE_URI = "imageUri"
+    }
+
+    // UI (must exist in activity_qrb.xml)
+    private lateinit var previewViewB: PreviewView
+    private lateinit var txtScanValueB: TextView
+    private lateinit var imgPreviewB: ImageView
+
+    // CameraX
+    private lateinit var cameraExecutor: ExecutorService
+    private var imageAnalysis: ImageAnalysis? = null
+    private var imageCapture: ImageCapture? = null
+    private val analyzing = AtomicBoolean(false)
+
+    // Inputs from A
+    private var gatewayId = ""
+    private var bedId     = ""
+
+    // Values we produce
+    private var locationId = ""
+    private var imageUri: Uri? = null
+
+    // Flow guards
+    private var navigated = false
+    private var lastDecoded: String? = null
+
+    // Permission launcher
+    private val requestCameraPerm =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (granted) startCamera() else {
+                Toast.makeText(this, "Camera permission required", Toast.LENGTH_LONG).show()
+                finish()
+            }
+        }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_qrb)
+
+        previewViewB   = findViewById(R.id.previewViewB)
+        txtScanValueB  = findViewById(R.id.txtScanValueB)
+        imgPreviewB    = findViewById(R.id.imgPreviewB)
+
+        // Read values from A
+        gatewayId = intent.getStringExtra(EXTRA_GATEWAY).orEmpty()
+        bedId     = intent.getStringExtra(EXTRA_BED).orEmpty()
+
+        cameraExecutor = Executors.newSingleThreadExecutor()
+
+        // Ask for camera permission if needed
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
+            == PackageManager.PERMISSION_GRANTED
+        ) {
+            startCamera()
+        } else {
+            requestCameraPerm.launch(Manifest.permission.CAMERA)
+        }
+    }
+
+    // ---------- Camera setup ----------
+    private fun startCamera() {
+        val providerFuture = ProcessCameraProvider.getInstance(this)
+        providerFuture.addListener({
+            val provider = providerFuture.get()
+
+            val preview = Preview.Builder().build().also {
+                it.setSurfaceProvider(previewViewB.surfaceProvider)
+            }
+
+            imageCapture = ImageCapture.Builder()
+                .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                .build()
+
+            imageAnalysis = ImageAnalysis.Builder()
+                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .build().apply {
+                    val scanner = BarcodeScanning.getClient()
+                    setAnalyzer(cameraExecutor) { proxy ->
+                        analyzeForQr(scanner, proxy)
+                    }
+                }
+
+            try {
+                provider.unbindAll()
+                provider.bindToLifecycle(
+                    this,
+                    CameraSelector.DEFAULT_BACK_CAMERA,
+                    preview,
+                    imageCapture,
+                    imageAnalysis
+                )
+            } catch (t: Throwable) {
+                Toast.makeText(this, "Camera error: ${t.message}", Toast.LENGTH_LONG).show()
+                finish()
+            }
+        }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun analyzeForQr(
+        scanner: com.google.mlkit.vision.barcode.BarcodeScanner,
+        imageProxy: ImageProxy
+    ) {
+        val mediaImage = imageProxy.image ?: return imageProxy.close()
+        if (analyzing.getAndSet(true)) { imageProxy.close(); return }
+
+        val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
+        scanner.process(image)
+            .addOnSuccessListener { codes ->
+                val value = codes.firstOrNull()?.rawValue
+                if (!value.isNullOrBlank() && value != lastDecoded) {
+                    lastDecoded = value
+                    onDecoded(value)
+                }
+            }
+            .addOnCompleteListener {
+                analyzing.set(false)
+                imageProxy.close()
+            }
+    }
+
+    // Called once when a *new* QR code is seen
+    private fun onDecoded(text: String) {
+        if (navigated) return
+
+        locationId = text.trim()
+        runOnUiThread { txtScanValueB.text = locationId }
+
+        // Take a quick photo snapshot; navigate afterwards
+        capturePhotoThenNavigate()
+    }
+
+    // ---------- Capture still image ----------
+    private fun capturePhotoThenNavigate() {
+        val capture = imageCapture
+        if (capture == null) { navigateToSummary(); return }
+
+        val outputDir = getOutputDir()
+        val fileName = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US)
+            .format(System.currentTimeMillis()) + "_locB.jpg"
+        val photoFile = File(outputDir, fileName)
+
+        val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile).build()
+
+        capture.takePicture(
+            outputOptions,
+            ContextCompat.getMainExecutor(this),
+            object : ImageCapture.OnImageSavedCallback {
+                override fun onError(exc: ImageCaptureException) {
+                    // If capture fails, still proceed.
+                    navigateToSummary()
+                }
+
+                override fun onImageSaved(result: ImageCapture.OutputFileResults) {
+                    imageUri = result.savedUri ?: Uri.fromFile(photoFile)
+                    runOnUiThread { imgPreviewB.setImageURI(imageUri) }
+                    navigateToSummary()
+                }
+            }
+        )
+    }
+
+    private fun getOutputDir(): File {
+        val mediaDir = if (Build.VERSION.SDK_INT >= 29) {
+            externalMediaDirs.firstOrNull()?.let { File(it, "captures").apply { mkdirs() } }
+        } else {
+            @Suppress("DEPRECATION")
+            File(getExternalFilesDir(null), "captures").apply { mkdirs() }
+        }
+        return mediaDir ?: filesDir
+    }
+
+    // ---------- Handoff ----------
+    private fun navigateToSummary() {
+        if (navigated) return
+        navigated = true
+
+        if (gatewayId.isBlank() || bedId.isBlank() || locationId.isBlank()) {
+            Toast.makeText(this, "Missing IDs", Toast.LENGTH_SHORT).show()
+            finish()
+            return
+        }
+
+        val i = Intent(this, SummaryBActivity::class.java).apply {
+            putExtra(EXTRA_GATEWAY,  gatewayId)
+            putExtra(EXTRA_BED,      bedId)
+            putExtra(EXTRA_LOCATION, locationId)
+            imageUri?.let { putExtra(EXTRA_IMAGE_URI, it.toString()) }
+        }
+        startActivity(i)
+        finish()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        imageAnalysis?.clearAnalyzer()
+        cameraExecutor.shutdown()
+    }
+}
+
+
+
+
