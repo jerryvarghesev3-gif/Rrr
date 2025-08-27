@@ -1,1 +1,221 @@
+package com.connect.connection
+
+import android.content.Intent
+import android.net.Uri
+import android.os.Bundle
+import android.widget.Button
+import android.widget.ImageView
+import android.widget.ProgressBar
+import android.widget.TextView
+import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
+
+// ---- Paho / MQTT imports ----
+// If you use `info.mqtt.android:android-mqtt:2.1.1`, replace the next line with:
+// import info.mqtt.android.service.MqttAndroidClient
+import org.eclipse.paho.android.service.MqttAndroidClient
+
+import org.eclipse.paho.client.mqttv3.IMqttActionListener
+import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken
+import org.eclipse.paho.client.mqttv3.IMqttToken
+import org.eclipse.paho.client.mqttv3.MqttCallbackExtended
+import org.eclipse.paho.client.mqttv3.MqttMessage
+import org.json.JSONObject
+
+class SummaryBActivity : AppCompatActivity() {
+
+    // --- UI ---
+    private lateinit var txtGateway: TextView
+    private lateinit var txtBed: TextView
+    private lateinit var txtLocation: TextView
+    private lateinit var txtInfo: TextView
+    private lateinit var imgPreview: ImageView
+    private lateinit var btnBack: Button
+    private lateinit var btnNext: Button
+    private var progress: ProgressBar? = null
+
+    // --- data coming from QRBActivity / SummaryAActivity ---
+    private var gatewayId: String = ""
+    private var bedId: String = ""
+    private var locationId: String = ""
+    private var imageUri: Uri? = null
+
+    companion object {
+        // duplicate the keys locally so we don't depend on other files
+        const val EXTRA_GATEWAY = "gatewayId"
+        const val EXTRA_BED = "bedId"
+        const val EXTRA_LOCATION = "locationId"
+        const val EXTRA_IMAGE_URI = "imageUri"
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_summary_b)
+
+        // bind
+        txtGateway  = findViewById(R.id.txtGatewayB)
+        txtBed      = findViewById(R.id.txtBedB)
+        txtLocation = findViewById(R.id.txtLocationB)
+        txtInfo     = findViewById(R.id.txtInfoB)
+        imgPreview  = findViewById(R.id.imgPreviewB)
+        btnBack     = findViewById(R.id.btnBackB)
+        btnNext     = findViewById(R.id.btnNextB)
+        progress    = findViewById(R.id.progressB) // optional in layout
+
+        // read extras
+        gatewayId = intent.getStringExtra(EXTRA_GATEWAY).orEmpty()
+        bedId     = intent.getStringExtra(EXTRA_BED).orEmpty()
+        locationId = intent.getStringExtra(EXTRA_LOCATION).orEmpty()
+        intent.getStringExtra(EXTRA_IMAGE_URI)?.let { imageUri = Uri.parse(it) }
+
+        // show
+        txtGateway.text  = "Gateway: $gatewayId"
+        txtBed.text      = "Bed ID: $bedId"
+        txtLocation.text = "Location ID: $locationId"
+        imageUri?.let { imgPreview.setImageURI(it) }
+
+        btnBack.setOnClickListener { finish() }
+
+        btnNext.setOnClickListener {
+            if (gatewayId.isEmpty() || bedId.isEmpty() || locationId.isEmpty()) {
+                Toast.makeText(this, "Missing IDs", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            setUiBusy(true, "Setting location…")
+            // 1) subscribe for reply, 2) attach callback, 3) publish request
+            subscribeForReplyAndSend(force = false)
+        }
+    }
+
+    // Subscribe to "bed/<bedId>/resp/set_location", attach a filtered callback, then publish
+    private fun subscribeForReplyAndSend(force: Boolean) {
+        val client: MqttAndroidClient = MqttHolder.client ?: run {
+            setUiBusy(false, "MQTT not connected")
+            return
+        }
+
+        val responseTopic = respTopicFor(bedId)
+
+        // 1) subscribe (idempotent if already subscribed)
+        client.subscribe(
+            /* topic   = */ responseTopic,
+            /* qos     = */ 1,
+            /* userCtx = */ null,
+            object : IMqttActionListener {
+                override fun onSuccess(asyncActionToken: IMqttToken?) {
+                    // 2) after subscribe, install a callback that filters by topic & handles JSON
+                    client.setCallback(object : MqttCallbackExtended {
+                        override fun connectComplete(reconnect: Boolean, serverURI: String?) {}
+                        override fun connectionLost(cause: Throwable?) {}
+
+                        override fun messageArrived(topic: String?, message: MqttMessage?) {
+                            if (topic == responseTopic) {
+                                val payload = message?.toString().orEmpty()
+                                runOnUiThread { handleResponseAndNavigate(payload) }
+                            }
+                        }
+                        // IMPORTANT: IMqttDeliveryToken (not IMqttToken)
+                        override fun deliveryComplete(token: IMqttDeliveryToken?) {}
+                    })
+
+                    // 3) once we are listening, publish the request
+                    publishSetLocation(force)
+                }
+
+                override fun onFailure(asyncActionToken: IMqttToken?, exception: Throwable?) {
+                    setUiBusy(false, "Subscribe failed: ${exception?.message}")
+                }
+            }
+        )
+    }
+
+    // Publish {"command":"set_location","data":{"bedId":..,"locationId":..,"force":..}}
+    private fun publishSetLocation(force: Boolean) {
+        val client: MqttAndroidClient = MqttHolder.client ?: run {
+            setUiBusy(false, "MQTT not connected")
+            return
+        }
+
+        val reqTopic = reqTopicFor(gatewayId)
+
+        val data = JSONObject().apply {
+            put("bedId", bedId)
+            put("locationId", locationId)
+            put("force", force)
+        }
+        val req = JSONObject().apply {
+            put("command", "set_location")
+            put("data", data)
+        }
+        val payload = req.toString().toByteArray(Charsets.UTF_8)
+
+        client.publish(
+            /* topic     = */ reqTopic,
+            /* payload   = */ payload,
+            /* qos       = */ 1,
+            /* retained  = */ false,
+            /* userCtx   = */ null,
+            object : IMqttActionListener {
+                override fun onSuccess(asyncActionToken: IMqttToken?) {
+                    setUiBusy(true, "Waiting for response…")
+                }
+
+                override fun onFailure(asyncActionToken: IMqttToken?, exception: Throwable?) {
+                    setUiBusy(false, "Publish failed: ${exception?.message}")
+                }
+            }
+        )
+    }
+
+    // Parse JSON reply and go to the final SummaryActivity
+    private fun handleResponseAndNavigate(json: String) {
+        try {
+            val root = JSONObject(json)
+            val status = root.optInt("status", -1)
+            val locFromResp = root.optJSONObject("data")
+                ?.optString("locationId")
+                ?.takeIf { !it.isNullOrBlank() }
+            val finalLoc = locFromResp ?: locationId
+
+            val i = Intent(this, SummaryActivity::class.java).apply {
+                putExtra("gatewayId", gatewayId)
+                putExtra("bedId", bedId)
+                putExtra("locationId", finalLoc)
+                putExtra("status", status)
+                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            }
+            startActivity(i)
+            finish()
+        } catch (t: Throwable) {
+            setUiBusy(false, "Response parse error: ${t.message}")
+        }
+    }
+
+    // Small helper to update UI while busy/not busy
+    private fun setUiBusy(busy: Boolean, msg: String? = null) {
+        btnNext.isEnabled = !busy
+        progress?.visibility = if (busy) android.view.View.VISIBLE else android.view.View.GONE
+        msg?.let { txtInfo.text = it }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        // Best-effort cleanup: unsubscribe and replace callback with a no-op
+        try {
+            val client = MqttHolder.client
+            val topic = respTopicFor(bedId)
+            client?.unsubscribe(topic)
+            client?.setCallback(object : MqttCallbackExtended {
+                override fun connectComplete(reconnect: Boolean, serverURI: String?) {}
+                override fun connectionLost(cause: Throwable?) {}
+                override fun messageArrived(topic: String?, message: MqttMessage?) {}
+                override fun deliveryComplete(token: IMqttDeliveryToken?) {}
+            })
+        } catch (_: Exception) { }
+    }
+
+    // ---- topic helpers (adjust to your broker’s conventions if needed) ----
+    private fun reqTopicFor(gw: String)  = "gw/$gw/req/set_location"
+    private fun respTopicFor(bed: String) = "bed/$bed/resp/set_location"
+}
 
