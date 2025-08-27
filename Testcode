@@ -1,1 +1,106 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp"
+    android:background="#202020">
+
+    <!-- Gateway ID -->
+    <TextView
+        android:id="@+id/txtGatewayB"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Gateway:"
+        android:textColor="@android:color/white"
+        android:textSize="18sp"
+        android:padding="8dp" />
+
+    <!-- Bed ID -->
+    <TextView
+        android:id="@+id/txtBedB"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Bed ID:"
+        android:textColor="@android:color/white"
+        android:textSize="18sp"
+        android:padding="8dp" />
+
+    <!-- Location ID -->
+    <TextView
+        android:id="@+id/txtLocationB"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Location ID:"
+        android:textColor="@android:color/white"
+        android:textSize="18sp"
+        android:padding="8dp" />
+
+    <!-- Info text -->
+    <TextView
+        android:id="@+id/txtInfoB"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Press Next to set location"
+        android:textColor="@android:color/holo_green_light"
+        android:textSize="16sp"
+        android:padding="8dp" />
+
+    <!-- Image preview -->
+    <ImageView
+        android:id="@+id/imgPreviewB"
+        android:layout_width="match_parent"
+        android:layout_height="180dp"
+        android:scaleType="centerInside"
+        android:adjustViewBounds="true"
+        android:background="#444"
+        android:layout_marginTop="12dp"
+        android:layout_marginBottom="12dp" />
+
+    <!-- Progress bar -->
+    <ProgressBar
+        android:id="@+id/progressB"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:visibility="gone" />
+
+    <!-- Buttons row -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:layout_marginTop="16dp">
+
+        <Button
+            android:id="@+id/btnBackB"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Back"
+            android:background="#888888"
+            android:textColor="@android:color/white"
+            android:padding="12dp" />
+
+        <Button
+            android:id="@+id/btnNextB"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Next"
+            android:background="@android:color/holo_green_dark"
+            android:textColor="@android:color/white"
+            android:padding="12dp"
+            android:layout_marginStart="8dp" />
+    </LinearLayout>
+
+</LinearLayout>
+
+
+
+
+
+
+
 
