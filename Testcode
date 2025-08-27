@@ -1,1 +1,134 @@
+package com.connect.connection
+
+import android.content.Intent
+import android.net.Uri
+import android.os.Bundle
+import android.widget.Button
+import android.widget.ImageView
+import android.widget.TextView
+import androidx.appcompat.app.AppCompatActivity
+
+class SummaryBActivity : AppCompatActivity() {
+
+    // values we display / forward
+    private var bedId: String = ""
+    private var locationId: String = ""
+    private var imageUri: Uri? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_summary_b)
+
+        // --- views ---
+        val imgLocation = findViewById<ImageView>(R.id.imgLocation)
+        val txtLocation = findViewById<TextView>(R.id.txtLocationId)
+        val btnRescan   = findViewById<Button>(R.id.btnRescanB)
+        val btnContinue = findViewById<Button>(R.id.btnContinueB)
+
+        // --- read extras (safe) ---
+        bedId = intent.getStringExtra(QRActivity.EXTRA_BED).orEmpty()
+
+        // Location + photo were produced by the “B” scan
+        locationId = intent.getStringExtra(QRBActivity.EXTRA_LOCATION).orEmpty()
+        intent.getStringExtra(QRBActivity.EXTRA_IMAGE_URI)?.let { uriStr ->
+            imageUri = Uri.parse(uriStr)
+        }
+
+        // --- show ---
+        txtLocation.text = "Location: $locationId"
+        imageUri?.let { imgLocation.setImageURI(it) }
+
+        // --- actions ---
+        btnRescan.setOnClickListener {
+            // just go back to the QRBActivity scanner
+            finish()
+        }
+
+        btnContinue.setOnClickListener {
+            // hand off to final summary screen; you can add more extras if needed
+            val i = Intent(this, SummaryActivity::class.java).apply {
+                putExtra(QRActivity.EXTRA_BED, bedId)
+                putExtra(QRBActivity.EXTRA_LOCATION, locationId)
+            }
+            startActivity(i)
+            finish()
+        }
+    }
+}
+
+
+
+
+
+
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#101820"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <!-- Preview of the second scan photo (optional) -->
+    <ImageView
+        android:id="@+id/imgLocation"
+        android:layout_width="match_parent"
+        android:layout_height="180dp"
+        android:adjustViewBounds="true"
+        android:scaleType="centerCrop"
+        android:background="#222"
+        android:contentDescription="Location preview" />
+
+    <!-- Spacer -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="12dp" />
+
+    <!-- Location text -->
+    <TextView
+        android:id="@+id/txtLocationId"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Location: "
+        android:textColor="#FFFFFF"
+        android:textSize="18sp" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+
+    <!-- Buttons row -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/btnRescanB"
+            android:layout_width="0dp"
+            android:layout_height="48dp"
+            android:layout_weight="1"
+            android:text="RESCAN" />
+
+        <View
+            android:layout_width="12dp"
+            android:layout_height="match_parent" />
+
+        <Button
+            android:id="@+id/btnContinueB"
+            android:layout_width="0dp"
+            android:layout_height="48dp"
+            android:layout_weight="1"
+            android:text="CONTINUE" />
+    </LinearLayout>
+</LinearLayout>
+
+
+
+
+
+
+
+
 
