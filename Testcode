@@ -1,1 +1,329 @@
+package com.connect.connection
+
+import android.content.Intent
+import android.net.Uri
+import android.os.Bundle
+import android.widget.Button
+import android.widget.ImageView
+import android.widget.TextView
+import android.widget.ProgressBar
+import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
+import org.eclipse.paho.client.mqttv3.IMqttActionListener
+import org.eclipse.paho.client.mqttv3.IMqttToken
+import org.eclipse.paho.client.mqttv3.MqttCallbackExtended
+import org.eclipse.paho.client.mqttv3.MqttMessage
+import org.json.JSONObject
+import java.util.concurrent.atomic.AtomicInteger
+
+class SummaryBActivity : AppCompatActivity() {
+
+    private lateinit var txtGateway: TextView
+    private lateinit var txtBed: TextView
+    private lateinit var txtLocation: TextView
+    private lateinit var txtInfo: TextView
+    private lateinit var imgPreview: ImageView
+    private lateinit var btnBack: Button
+    private lateinit var btnNext: Button
+    private lateinit var progress: ProgressBar
+
+    private var gatewayId = ""
+    private var bedId = ""
+    private var locationId = ""
+    private var imageUri: Uri? = null
+
+    // transaction id counter (just like your old code)
+    private val txGen = AtomicInteger(1000)
+
+    companion object {
+        const val EXTRA_GATEWAY = "gatewayId"
+        const val EXTRA_BED = "bedId"
+        const val EXTRA_IMAGE_URI = "imageUri"
+        const val EXTRA_LOCATION = "locationId"
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_summary_b)
+
+        // bind
+        txtGateway  = findViewById(R.id.txtGatewayB)
+        txtBed      = findViewById(R.id.txtBedB)
+        txtLocation = findViewById(R.id.txtLocationB)
+        txtInfo     = findViewById(R.id.txtInfoB)
+        imgPreview  = findViewById(R.id.imgPreviewB)
+        btnBack     = findViewById(R.id.btnBackB)
+        btnNext     = findViewById(R.id.btnNextB)
+        progress    = findViewById(R.id.progressB)
+
+        // read extras
+        gatewayId  = intent.getStringExtra(EXTRA_GATEWAY).orEmpty()
+        bedId      = intent.getStringExtra(EXTRA_BED).orEmpty()
+        locationId = intent.getStringExtra(EXTRA_LOCATION).orEmpty()
+        intent.getStringExtra(EXTRA_IMAGE_URI)?.let { imageUri = Uri.parse(it) }
+
+        // show
+        txtGateway.text  = "Gateway: $gatewayId"
+        txtBed.text      = "Bed ID: $bedId"
+        txtLocation.text = "Location ID: $locationId"
+        imageUri?.let { imgPreview.setImageURI(it) }
+
+        btnBack.setOnClickListener { finish() }
+
+        btnNext.setOnClickListener {
+            if (gatewayId.isEmpty() || bedId.isEmpty() || locationId.isEmpty()) {
+                Toast.makeText(this, "Missing IDs", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            // Do the real work here
+            setUiBusy(true, "Setting location…")
+            subscribeForReplyAndSend(force = true)
+        }
+    }
+
+    // ---------- MQTT wireup & publish ----------
+
+    private fun reqTopicFor(gw: String) = "gw/$gw/req/set_location"
+    private fun respTopicFor(bed: String) = "bed/$bed/resp/set_location"
+
+    private fun subscribeForReplyAndSend(force: Boolean) {
+        val client = MqttAndroid.client ?: run {
+            setUiBusy(false, "MQTT not connected")
+            return
+        }
+
+        val responseTopic = respTopicFor(bedId)
+
+        // 1) subscribe (idempotent)
+        client.subscribe(responseTopic, /*qos*/1, /*userContext*/null, object : IMqttActionListener {
+            override fun onSuccess(asyncActionToken: IMqttToken?) {
+                // 2) set a callback that filters by topic and handles JSON
+                client.setCallback(object : MqttCallbackExtended {
+                    override fun connectComplete(reconnect: Boolean, serverURI: String?) {}
+                    override fun connectionLost(cause: Throwable?) {}
+                    override fun messageArrived(topic: String?, message: MqttMessage?) {
+                        if (topic == responseTopic) {
+                            val payload = message?.toString().orEmpty()
+                            runOnUiThread { handleResponseAndNavigate(payload) }
+                        }
+                    }
+                    override fun deliveryComplete(token: IMqttToken?) {}
+                })
+
+                // 3) after subscribe succeeds, publish the request
+                publishSetLocation(force)
+            }
+
+            override fun onFailure(asyncActionToken: IMqttToken?, exception: Throwable?) {
+                setUiBusy(false, "Subscribe failed: ${exception?.message}")
+            }
+        })
+    }
+
+    private fun publishSetLocation(force: Boolean) {
+        val client = MqttAndroid.client ?: run {
+            setUiBusy(false, "MQTT not connected")
+            return
+        }
+
+        val txId = txGen.incrementAndGet()
+
+        // important: use the snake_case keys your gateway expects
+        val data = JSONObject().apply {
+            put("bed_id", bedId)
+            put("location_id", locationId)
+            put("force", force)
+        }
+        val req = JSONObject().apply {
+            put("command", "set_location")
+            put("data", data)
+            put("reply_to", respTopicFor(bedId))      // so device/broker knows where to answer
+            put("transaction_id", txId)               // helps correlate replies
+        }
+
+        val payload = req.toString().toByteArray(Charsets.UTF_8)
+        val topic = reqTopicFor(gatewayId)
+
+        client.publish(topic, payload, /*qos*/1, /*retained*/false, /*userContext*/null,
+            object : IMqttActionListener {
+                override fun onSuccess(asyncActionToken: IMqttToken?) {
+                    // just wait for response…
+                    txtInfo.text = "Waiting for response…"
+                }
+
+                override fun onFailure(asyncActionToken: IMqttToken?, exception: Throwable?) {
+                    setUiBusy(false, "Publish failed: ${exception?.message}")
+                }
+            })
+    }
+
+    private fun handleResponseAndNavigate(json: String) {
+        // Example reply: { "status":0, "data": { "locationId":"..." } }
+        val status = try {
+            val root = JSONObject(json)
+            root.optInt("status", -1)
+        } catch (_: Throwable) { -1 }
+
+        val i = Intent(this, SummaryActivity::class.java).apply {
+            putExtra("gatewayId",  gatewayId)
+            putExtra("bedId",      bedId)
+            putExtra("locationId", locationId) // keep original; device may echo too
+            putExtra("status",     status)
+            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        }
+
+        startActivity(i)
+        finish()
+    }
+
+    // ---------- helpers ----------
+
+    private fun setUiBusy(busy: Boolean, msg: String) {
+        txtInfo.text = msg
+        progress.visibility = if (busy) ProgressBar.VISIBLE else ProgressBar.GONE
+        btnNext.isEnabled = !busy
+        btnBack.isEnabled = !busy
+    }
+}
+
+
+
+
+
+
+package com.connect.connection
+
+import android.content.Intent
+import android.os.Bundle
+import android.widget.Button
+import android.widget.TextView
+import androidx.appcompat.app.AppCompatActivity
+
+class SummaryActivity : AppCompatActivity() {
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_summary)
+
+        val status     = intent.getIntExtra("status", -1)
+        val gatewayId  = intent.getStringExtra("gatewayId") ?: ""
+        val bedId      = intent.getStringExtra("bedId") ?: ""
+        val locationId = intent.getStringExtra("locationId") ?: ""
+
+        val txt = findViewById<TextView>(R.id.summaryText)
+        txt.text = buildString {
+            appendLine(if (status == 0) "✅ Location set OK" else "❌ set_location failed (status=$status)")
+            appendLine("Gateway: $gatewayId")
+            appendLine("Bed ID: $bedId")
+            appendLine("Location ID: $locationId")
+        }
+
+        findViewById<Button>(R.id.btnDone).setOnClickListener {
+            // Close the flow entirely
+            finishAffinity()
+        }
+    }
+}
+
+
+
+
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp"
+    android:background="#202020">
+
+    <TextView
+        android:id="@+id/txtGatewayB"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Gateway:"
+        android:textColor="@android:color/white"
+        android:textSize="18sp"
+        android:padding="8dp" />
+
+    <TextView
+        android:id="@+id/txtBedB"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Bed ID:"
+        android:textColor="@android:color/white"
+        android:textSize="18sp"
+        android:padding="8dp" />
+
+    <TextView
+        android:id="@+id/txtLocationB"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Location ID:"
+        android:textColor="@android:color/white"
+        android:textSize="18sp"
+        android:padding="8dp" />
+
+    <TextView
+        android:id="@+id/txtInfoB"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Press Next to set location"
+        android:textColor="@android:color/holo_green_light"
+        android:textSize="16sp"
+        android:padding="8dp" />
+
+    <ImageView
+        android:id="@+id/imgPreviewB"
+        android:layout_width="match_parent"
+        android:layout_height="180dp"
+        android:scaleType="centerInside"
+        android:adjustViewBounds="true"
+        android:background="#444"
+        android:layout_marginTop="12dp"
+        android:layout_marginBottom="12dp" />
+
+    <ProgressBar
+        android:id="@+id/progressB"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:visibility="gone" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:layout_marginTop="16dp">
+
+        <Button
+            android:id="@+id/btnBackB"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Back"
+            android:background="#888888"
+            android:textColor="@android:color/white"
+            android:padding="12dp" />
+
+        <Button
+            android:id="@+id/btnNextB"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Next"
+            android:background="@android:color/holo_green_dark"
+            android:textColor="@android:color/white"
+            android:padding="12dp"
+            android:layout_marginStart="8dp" />
+    </LinearLayout>
+
+</LinearLayout>
+
+
+
+
+
+
+
 
