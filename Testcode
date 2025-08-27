@@ -147,3 +147,15 @@
 
 
 
+
+
+
+
+<androidx.camera.view.PreviewView
+    android:id="@+id/previewViewB"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:scaleType="fitCenter"
+    android:layout_gravity="center"/>
+
+
