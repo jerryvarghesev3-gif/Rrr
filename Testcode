@@ -1,1 +1,98 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="vertical"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:padding="16dp"
+    android:gravity="center_horizontal"
+    android:background="#0000AA">
 
+    <!-- Details (white text) -->
+    <TextView
+        android:id="@+id/txtGatewayB"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Gateway: "
+        android:textColor="@android:color/white"
+        android:textStyle="bold"
+        android:textSize="18sp"
+        android:padding="8dp" />
+
+    <TextView
+        android:id="@+id/txtBedB"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Bed ID: "
+        android:textColor="@android:color/white"
+        android:textSize="18sp"
+        android:padding="8dp" />
+
+    <TextView
+        android:id="@+id/txtLocationB"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Location ID: "
+        android:textColor="@android:color/white"
+        android:textSize="18sp"
+        android:padding="8dp" />
+
+    <TextView
+        android:id="@+id/txtInfoB"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text=""
+        android:textColor="@android:color/white"
+        android:textSize="16sp"
+        android:padding="8dp" />
+
+    <!-- Image BELOW the details, same size style as SummaryA -->
+    <ImageView
+        android:id="@+id/imgPreviewB"
+        android:layout_width="match_parent"
+        android:layout_height="220dp"
+        android:layout_marginTop="12dp"
+        android:adjustViewBounds="true"
+        android:scaleType="centerCrop"
+        android:background="#222222" />
+
+    <!-- Buttons row -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:layout_marginTop="16dp">
+
+        <Button
+            android:id="@+id/btnRescanB"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="RESCAN" />
+
+        <Button
+            android:id="@+id/btnCancelB"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp"
+            android:layout_marginEnd="8dp"
+            android:text="CANCEL" />
+
+        <Button
+            android:id="@+id/btnContinueB"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="CONTINUE" />
+    </LinearLayout>
+
+    <!-- Progress (if you use it) -->
+    <ProgressBar
+        android:id="@+id/progressB"
+        style="?android:attr/progressBarStyleLarge"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="24dp"
+        android:visibility="gone" />
+</LinearLayout>
