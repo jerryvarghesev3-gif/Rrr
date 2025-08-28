@@ -5,3 +5,394 @@
     android:textColor="@android:color/white"
     android:textSize="18sp"
     android:layout_marginTop="16dp" />
+
+
+
+
+
+package com.connect.connection
+
+import android.app.AlertDialog
+import android.content.Intent
+import android.net.Uri
+import android.os.Bundle
+import android.view.View
+import android.widget.*
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AppCompatActivity
+import info.mqtt.android.service.MqttAndroidClient
+import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken
+import org.eclipse.paho.client.mqttv3.MqttCallbackExtended
+import org.eclipse.paho.client.mqttv3.MqttMessage
+import org.json.JSONObject
+
+class SummaryBActivity : AppCompatActivity() {
+
+    // ---- UI (use your existing ids in activity_summary_b.xml) ----
+    private lateinit var txtGateway: TextView
+    private lateinit var txtBed: TextView
+    private lateinit var txtLocation: TextView
+    private lateinit var txtInfo: TextView
+    private lateinit var imgPreview: ImageView
+    private lateinit var btnRescan: Button
+    private lateinit var btnCancel: Button
+    private lateinit var btnContinue: Button
+    private lateinit var progress: ProgressBar
+
+    // ---- Inputs from B flow ----
+    private var gatewayId: String = ""
+    private var bedId: String = ""
+    private var locationId: String = ""
+    private var imageUri: Uri? = null
+
+    // ---- MQTT access ----
+    private val mqtt: MqttAndroidClient? get() = MqttHolder.client
+    private var subSetResp = false
+    private var subKlm    = false
+
+    // ---- Topics ----
+    private fun reqTopicGw(gw: String)  = "gw/$gw/req/set_location"
+    private fun respTopicGw(gw: String) = "gw/$gw/resp/set_location"
+    // KLM details are inside the signal_strength feed you showed
+    private fun topicKlm(gw: String)    = "gw/$gw/json/signal_strength"
+
+    // ---- KLM data from MQTT ----
+    private var klmIdFromTopic: String? = null
+    private var klmVerifiedFromTopic: Int = -1
+
+    // ---- KLM scan launcher ----
+    private val scanKlmLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
+            if (res.resultCode == RESULT_OK) {
+                val scanned = res.data?.getStringExtra(QRKLMActivity.EXTRA_KLM_SCAN).orEmpty()
+                onKlmScanned(scanned)
+            }
+        }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_summary_b)
+
+        // bind
+        txtGateway  = findViewById(R.id.txtGatewayB)
+        txtBed      = findViewById(R.id.txtBedB)
+        txtLocation = findViewById(R.id.txtLocationB)
+        txtInfo     = findViewById(R.id.txtInfoB)
+        imgPreview  = findViewById(R.id.imgPreviewB)
+        btnRescan   = findViewById(R.id.btnRescanB)
+        btnCancel   = findViewById(R.id.btnCancelB)
+        btnContinue = findViewById(R.id.btnContinueB)
+        progress    = findViewById(R.id.progressB)
+
+        // extras
+        gatewayId  = intent.getStringExtra(QRActivity.EXTRA_GATEWAY).orEmpty()
+        bedId      = intent.getStringExtra(QRActivity.EXTRA_BED).orEmpty()
+        locationId = intent.getStringExtra(QRActivity.EXTRA_LOCATION).orEmpty()
+        intent.getStringExtra(QRActivity.EXTRA_IMAGE_URI)?.let { imageUri = Uri.parse(it) }
+
+        // header
+        txtGateway.text  = "Gateway: $gatewayId"
+        txtBed.text      = "Bed ID: $bedId"
+        txtLocation.text = "Location ID: $locationId"
+        imageUri?.let { imgPreview.setImageURI(it) }
+
+        // buttons
+        btnRescan.setOnClickListener { finish() }            // back to B scanner
+        btnCancel.setOnClickListener { finishAffinity() }    // exit flow
+        btnContinue.setOnClickListener { onContinue() }      // set location -> verify KLM?
+    }
+
+    // ---------------- Set location then prompt for KLM ----------------
+    private fun onContinue() {
+        if (gatewayId.isBlank() || bedId.isBlank() || locationId.isBlank()) {
+            Toast.makeText(this, "Missing IDs", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val c = mqtt
+        if (c == null || !c.isConnected) {
+            Toast.makeText(this, "MQTT not connected", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        setBusy(true, "Setting location…")
+
+        try {
+            if (!subSetResp) {
+                c.subscribe(respTopicGw(gatewayId), 1, null, null)
+                subSetResp = true
+            }
+            c.setCallback(object : MqttCallbackExtended {
+                override fun connectComplete(reconnect: Boolean, serverURI: String?) {}
+                override fun connectionLost(cause: Throwable?) {}
+                override fun deliveryComplete(token: IMqttDeliveryToken?) {}
+                override fun messageArrived(topic: String?, message: MqttMessage?) {
+                    if (topic == respTopicGw(gatewayId)) {
+                        handleSetLocationResp(message?.toString().orEmpty())
+                    }
+                }
+            })
+
+            val payload = JSONObject().apply {
+                put("bed_id", bedId)
+                put("location_id", locationId)
+            }.toString()
+
+            c.publish(reqTopicGw(gatewayId), payload.toByteArray(), 1, false)
+        } catch (t: Throwable) {
+            setBusy(false, "")
+            Toast.makeText(this, "Set location failed: ${t.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun handleSetLocationResp(json: String) {
+        runOnUiThread {
+            setBusy(false, "Location set")
+            promptVerifyKlm()
+        }
+    }
+
+    private fun promptVerifyKlm() {
+        AlertDialog.Builder(this)
+            .setTitle("Verify KLM")
+            .setMessage("Would you like to scan and verify the KLM now?")
+            .setPositiveButton("Yes") { _, _ ->
+                subscribeKlmDetails()
+                launchKlmScan()
+            }
+            .setNegativeButton("No") { _, _ ->
+                navigateToFinalSummary(klmId = "", klmOk = false)
+            }
+            .show()
+    }
+
+    private fun launchKlmScan() {
+        scanKlmLauncher.launch(Intent(this, QRKLMActivity::class.java))
+    }
+
+    // ---------------- KLM details subscription & parsing ----------------
+    private fun subscribeKlmDetails() {
+        val c = mqtt ?: return
+        if (!c.isConnected) return
+
+        try {
+            if (!subKlm) {
+                c.subscribe(topicKlm(gatewayId), 1, null, null)
+                subKlm = true
+            }
+            c.setCallback(object : MqttCallbackExtended {
+                override fun connectComplete(reconnect: Boolean, serverURI: String?) {}
+                override fun connectionLost(cause: Throwable?) {}
+                override fun deliveryComplete(token: IMqttDeliveryToken?) {}
+                override fun messageArrived(topic: String?, message: MqttMessage?) {
+                    if (topic == topicKlm(gatewayId)) {
+                        handleKlmJson(message?.toString().orEmpty())
+                    }
+                }
+            })
+        } catch (t: Throwable) {
+            Toast.makeText(this, "Subscribe KLM failed: ${t.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // Example payload you posted:
+    // {
+    //   "bed_info":{"id":"DD"},
+    //   "location":{"id":"727826b-3a361b7a0d60"},
+    //   "klm":{"id":"d34a7e4a-55aa-43e0-5e01a4","verified":-1},
+    //   "value":-83
+    // }
+    private fun handleKlmJson(json: String) {
+        try {
+            val root = JSONObject(json)
+            val klm = root.optJSONObject("klm")
+            val id = klm?.optString("id").orEmpty()
+            val verified = klm?.optInt("verified", -1) ?: -1
+            if (id.isNotBlank()) {
+                klmIdFromTopic = id
+                klmVerifiedFromTopic = verified
+            }
+        } catch (_: Exception) { /* ignore */ }
+    }
+
+    private fun onKlmScanned(scanned: String) {
+        if (scanned.isBlank()) {
+            Toast.makeText(this, "Empty KLM scan", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val expected = klmIdFromTopic
+        if (expected.isNullOrBlank()) {
+            Toast.makeText(this, "KLM details not loaded yet", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val ok = scanned == expected
+        navigateToFinalSummary(klmId = scanned, klmOk = ok)
+    }
+
+    // ---------------- Handoff to final summary ----------------
+    private fun navigateToFinalSummary(klmId: String, klmOk: Boolean) {
+        // tidy up MQTT
+        try {
+            val c = mqtt
+            if (c != null && c.isConnected) {
+                if (subSetResp) c.unsubscribe(respTopicGw(gatewayId))
+                if (subKlm) c.unsubscribe(topicKlm(gatewayId))
+            }
+            mqtt?.setCallback(null)
+        } catch (_: Exception) {}
+
+        val i = Intent(this, SummaryActivity::class.java).apply {
+            putExtra(QRActivity.EXTRA_GATEWAY, gatewayId)
+            putExtra(QRActivity.EXTRA_BED, bedId)
+            putExtra(QRActivity.EXTRA_LOCATION, locationId)
+            imageUri?.toString()?.let { putExtra(QRActivity.EXTRA_IMAGE_URI, it) }
+            putExtra(QRKLMActivity.EXTRA_KLM_SCAN, klmId)
+            putExtra(QRKLMActivity.EXTRA_KLM_VERIFIED, klmOk)
+        }
+        startActivity(i)
+        finish()
+    }
+
+    // ---------------- Helpers & lifecycle ----------------
+    private fun setBusy(busy: Boolean, message: String) {
+        txtInfo.text = message
+        progress.visibility = if (busy) View.VISIBLE else View.GONE
+        btnContinue.isEnabled = !busy
+        btnRescan.isEnabled = !busy
+        btnCancel.isEnabled = !busy
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        // best-effort cleanup if user leaves early
+        try {
+            val c = mqtt
+            if (c != null && c.isConnected) {
+                if (subSetResp) c.unsubscribe(respTopicGw(gatewayId))
+                if (subKlm) c.unsubscribe(topicKlm(gatewayId))
+            }
+            mqtt?.setCallback(null)
+        } catch (_: Exception) {}
+    }
+}
+
+
+
+
+
+
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#002B5B"
+    android:orientation="vertical"
+    android:padding="16dp"
+    android:gravity="center_horizontal">
+
+    <!-- Existing fields -->
+    <TextView
+        android:id="@+id/txtGatewayB"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Gateway:"
+        android:textColor="@android:color/white"
+        android:textSize="18sp"
+        android:padding="8dp" />
+
+    <TextView
+        android:id="@+id/txtBedB"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Bed ID:"
+        android:textColor="@android:color/white"
+        android:textSize="18sp"
+        android:padding="8dp" />
+
+    <TextView
+        android:id="@+id/txtLocationB"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Location ID:"
+        android:textColor="@android:color/white"
+        android:textSize="18sp"
+        android:padding="8dp" />
+
+    <!-- NEW: Show KLM details -->
+    <TextView
+        android:id="@+id/txtKlmB"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="KLM ID: -"
+        android:textColor="@android:color/white"
+        android:textSize="18sp"
+        android:padding="8dp" />
+
+    <TextView
+        android:id="@+id/txtKlmStatusB"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="KLM Status: Not verified"
+        android:textColor="@android:color/white"
+        android:textSize="16sp"
+        android:padding="8dp" />
+
+    <!-- Preview image -->
+    <ImageView
+        android:id="@+id/imgPreviewB"
+        android:layout_width="220dp"
+        android:layout_height="220dp"
+        android:layout_marginTop="12dp"
+        android:scaleType="centerCrop"
+        android:adjustViewBounds="true"
+        android:background="@android:color/darker_gray" />
+
+    <!-- Info label (messages like Setting location…) -->
+    <TextView
+        android:id="@+id/txtInfoB"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text=""
+        android:textColor="@android:color/holo_blue_light"
+        android:padding="8dp" />
+
+    <!-- Buttons row -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:layout_marginTop="16dp">
+
+        <Button
+            android:id="@+id/btnRescanB"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="RESCAN" />
+
+        <Button
+            android:id="@+id/btnCancelB"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp"
+            android:text="CANCEL" />
+
+        <Button
+            android:id="@+id/btnContinueB"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp"
+            android:text="CONTINUE" />
+    </LinearLayout>
+
+    <!-- Progress bar for busy state -->
+    <ProgressBar
+        android:id="@+id/progressB"
+        style="?android:attr/progressBarStyleLarge"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="24dp"
+        android:visibility="gone" />
+
+</LinearLayout>
