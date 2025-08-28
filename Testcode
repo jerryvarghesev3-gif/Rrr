@@ -1,1 +1,7 @@
-
+<TextView
+    android:id="@+id/txtSummary"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:textColor="@android:color/white"
+    android:textSize="18sp"
+    android:layout_marginTop="16dp" />
