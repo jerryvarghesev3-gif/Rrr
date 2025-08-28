@@ -1,1 +1,21 @@
+private fun navigateToFinalSummary(klmId: String, klmOk: Boolean) {
+    // tidy up MQTT
+    try {
+        val c = mqtt
+        if (c != null && c.isConnected) {
+            if (subSetResp) c.unsubscribe(respTopicBed(bedId))
+            if (subKlm)     c.unsubscribe(topicKlm(gatewayId))
+            // c.setCallback(null)  <-- remove this
+        }
+    } catch (_: Exception) { }
 
+    val i = Intent(this, SummaryActivity::class.java).apply {
+        putExtra(QRActivity.EXTRA_GATEWAY, gatewayId)
+        putExtra(QRActivity.EXTRA_BED, bedId)
+        putExtra(QRBActivity.EXTRA_LOCATION, locationId)
+        imageUri?.toString()?.let { putExtra(QRActivity.EXTRA_IMAGE_URI, it) }
+        putExtra(QRKLMActivity.EXTRA_KLM_SCAN, klmId)
+        putExtra(QRKLMActivity.EXTRA_KLM_VERIFIED, klmOk)
+    }
+    startActivity(i)
+}
