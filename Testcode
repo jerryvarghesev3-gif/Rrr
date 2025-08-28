@@ -1,1 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/rootSummary"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp"
+    android:background="#002B5B">
 
+    <!-- Header -->
+    <TextView
+        android:id="@+id/txtGateway"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Gateway: "
+        android:textColor="@android:color/white"
+        android:textSize="18sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/txtBed"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Bed ID: "
+        android:textColor="@android:color/white"
+        android:textSize="18sp"
+        android:layout_marginTop="4dp" />
+
+    <TextView
+        android:id="@+id/txtLocation"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Location ID: "
+        android:textColor="@android:color/white"
+        android:textSize="18sp"
+        android:layout_marginTop="4dp" />
+
+    <!-- Preview image (same sizing you used on B) -->
+    <ImageView
+        android:id="@+id/imgPreview"
+        android:layout_width="match_parent"
+        android:layout_height="220dp"
+        android:layout_marginTop="12dp"
+        android:scaleType="centerCrop"
+        android:background="#222222" />
+
+    <!-- KLM section -->
+    <TextView
+        android:id="@+id/txtKlm"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="KLM ID: —"
+        android:textColor="@android:color/white"
+        android:textSize="18sp"
+        android:layout_marginTop="16dp" />
+
+    <TextView
+        android:id="@+id/txtKlmStatus"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="KLM Status: Not available"
+        android:textColor="@android:color/white"
+        android:textSize="16sp"
+        android:layout_marginTop="4dp" />
+
+    <!-- Verify button -->
+    <Button
+        android:id="@+id/btnVerifyKlm"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="VERIFY KLM"
+        android:layout_marginTop="16dp" />
+
+    <!-- Spacer to push DONE to the bottom -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+
+    <!-- Done button at bottom -->
+    <Button
+        android:id="@+id/btnDone"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="DONE" />
+
+</LinearLayout>
