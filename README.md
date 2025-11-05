@@ -182,3 +182,93 @@ fun FirmwareCompatibilityModals(
         }
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+@Composable
+fun FirmwareCompatibilityModals(
+    state: DynamoFirmwareScreenState,
+    uiEvent: (event: FirmwareEvent) -> Unit,
+    isBasic: Boolean
+) {
+    // 1) Loading while we evaluate
+    if (state.firmwareCompatibilityStatus == DFirmwareCompatibilityStatus.Evaluating) {
+        LoadingModal(
+            title = "Loading",
+            text  = "Evaluating firmware compatibility."
+        )
+    }
+
+    // 2) OS update INCLUDED but we still need transport choice
+    if (state.firmwareCompatibilityStatus == DFirmwareCompatibilityStatus.OSUpdateNotIncluded) {
+        Modal(
+            title = "Transfer Method",
+            text  = "Choose your transfer method.",
+            confirmButton = {
+                ModalButton(label = "Wi-Fi") {
+                    uiEvent(FirmwareEvent.FwUpdateMethodSelect(FirmwareUpdateType.WIFI))
+                }
+            },
+            dismissButton = {
+                ModalSecondaryButton(label = "USB") {
+                    uiEvent(FirmwareEvent.FwUpdateMethodSelect(FirmwareUpdateType.USB, isBasic))
+                }
+            }
+        )
+    }
+
+    // 3) Generic compatibility error
+    if (state.firmwareCompatibilityStatus == DFirmwareCompatibilityStatus.Error) {
+        Modal(
+            title = "Error",
+            text  = "Error evaluating firmware compatibility.",
+            confirmButton = {
+                ModalButton(label = "Okay") {
+                    uiEvent(FirmwareEvent.FwIncompatibleConfirm)
+                }
+            }
+        )
+    }
+
+    // 4) Update incompatible with current system
+    if (state.firmwareCompatibilityStatus == DFirmwareCompatibilityStatus.UpdateIncompatible) {
+        Modal(
+            title = "Error",
+            text  = "Incompatible update.",
+            confirmButton = {
+                ModalButton(label = "Okay") {
+                    uiEvent(FirmwareEvent.FwIncompatibleConfirm)
+                }
+            }
+        )
+    }
+
+    // 5) Wi-Fi path: either “mini profile” alert or the Wi-Fi method chooser
+    if (state.isWifiMethodModalVisible ||
+        state.firmwareCompatibilityStatus == DFirmwareCompatibilityStatus.OSUpdateIncludedNoInternet
+    ) {
+        if (state.isMiniWifiProfileAlertVisible) {
+            MiniWifiProfileModal(
+                onOKClicked = { uiEvent(FirmwareEvent.ConfirmMiniWifiProfileAlert) }
+            )
+        } else {
+            WifiNotConnectedModal(
+                modalTitle      = "Wi-Fi Method",
+                onCancelHotspot = { uiEvent(FirmwareEvent.CancelHotspotClicked) },
+                onPickWifi      = { uiEvent(FirmwareEvent.FwUpdateMethodSelect(FirmwareUpdateType.WIFI)) },
+                onSetupHotspot  = { uiEvent(FirmwareEvent.SetupHotspotClicked) },
+            )
+        }
+    }
+}
