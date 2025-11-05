@@ -28,6 +28,12 @@ if (extracted.isEmpty()) {
 
 
 
+
+
+
+
+
+
 import android.content.Context
 import java.io.File
 import java.io.FileInputStream
@@ -70,4 +76,109 @@ fun decryptFileToTemp(context: Context, encFile: File, plainSuffix: String): Fil
 
     require(out.length() > 0L) { "Decrypted empty: ${out.path}" }
     return out
+}
+
+
+
+
+
+
+
+
+
+@Composable
+fun FirmwareCompatibilityModals(
+    state: DFirmwareScreenState,
+    uiEvent: (FirmwareEvent) -> Unit,
+    isBasic: Boolean
+) {
+    val status = state.firmwareCompatibilityStatus
+
+    // show exactly one modal based on status priority
+    when (status) {
+
+        DFirmwareCompatibilityStatus.Evaluating -> {
+            // Loading while we parse/extract
+            LoadingModal(
+                title = "Loading",
+                text = "Evaluating firmware compatibility..."
+            )
+        }
+
+        // Show transfer-method picker for both “included” and “not included” cases.
+        // The service will push exactly the right files later.
+        DFirmwareCompatibilityStatus.OSUpdateIncluded,
+        DFirmwareCompatibilityStatus.OSUpdateNotIncluded -> {
+            Modal(
+                title = "Transfer Method",
+                text  = "Choose your transfer method.",
+                confirmButton = {
+                    ModalButton(label = "Wi-Fi") {
+                        uiEvent(FirmwareEvent.FwUpdateMethodSelect(FirmwareUpdateType.WIFI))
+                    }
+                },
+                dismissButton = {
+                    ModalSecondaryButton(label = "USB") {
+                        uiEvent(FirmwareEvent.FwUpdateMethodSelect(FirmwareUpdateType.USB, isBasic))
+                    }
+                }
+            )
+        }
+
+        DFirmwareCompatibilityStatus.OSUpdateRequired -> {
+            Modal(
+                title = "Update Required",
+                text  = "Operating System update state required.",
+                dismissButton = {
+                    ModalButton(label = "Cancel") {
+                        uiEvent(FirmwareEvent.FwIncompatibleConfirm)
+                    }
+                }
+            )
+        }
+
+        DFirmwareCompatibilityStatus.UpdateIncompatible -> {
+            Modal(
+                title = "Error",
+                text  = "Incompatible update.",
+                confirmButton = {
+                    ModalButton(label = "Okay") {
+                        uiEvent(FirmwareEvent.FwIncompatibleConfirm)
+                    }
+                }
+            )
+        }
+
+        DFirmwareCompatibilityStatus.Error -> {
+            Modal(
+                title = "Error",
+                text  = "Error evaluating firmware compatibility.",
+                confirmButton = {
+                    ModalButton(label = "Okay") {
+                        uiEvent(FirmwareEvent.FwIncompatibleConfirm)
+                    }
+                }
+            )
+        }
+
+        else -> { /* No modal */ }
+    }
+
+    // Separate Wi-Fi helper modal (only if we are *already* on a Wi-Fi path)
+    if (state.isWifiMethodModalVisible ||
+        status == DFirmwareCompatibilityStatus.OSUpdateIncludedNoInternet
+    ) {
+        if (state.isMiniWifiProfileAlertVisible) {
+            MiniWifiProfileModal(
+                onOkClicked = { uiEvent(FirmwareEvent.ConfirmMiniWifiProfileAlert) }
+            )
+        } else {
+            WifiNotConnectedModal(
+                modalTitle = "Wi-Fi Method",
+                onCancelHotspot = { uiEvent(FirmwareEvent.CancelHotspotClicked) },
+                onPickWifi      = { uiEvent(FirmwareEvent.FwUpdateMethodSelect(FirmwareUpdateType.WIFI)) },
+                onSetupHotspot  = { uiEvent(FirmwareEvent.SetupHotspotClicked) }
+            )
+        }
+    }
 }
