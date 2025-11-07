@@ -105,3 +105,107 @@ override suspend fun extractFirmwareFile(
 
 
 
+
+
+
+
+// --- tiny helpers (keep near the service or in a file-local section) ---
+private fun File.baseNameForMatch(): String =
+    if (name.endsWith(".enc", ignoreCase = true)) name.removeSuffix(".enc") else name
+
+private fun File.decryptIfEnc(context: Context): File {
+    return if (name.endsWith(".enc", ignoreCase = true)) {
+        // Reuse your existing decryptor. It should return a plain file.
+        // Extension doesn’t matter, but we’ll prefer .tar.gz for downstream readers.
+        Encryption.decryptFileToTemp(
+            context = context,
+            encFile = this,
+            plainSuffix = ".tar.gz" // produces <cache>/.../firmware_raw_XXXX.tar.gz
+        )
+    } else {
+        this
+    }
+}
+
+// ----------------------------------------------------------------------
+
+override suspend fun evaluateFirmwareCompatibility(
+    activeOsVersion: DynamoYoctoOS,
+    releaseManifest: SoftwareReleaseManifest,
+): Outcome<DynamoFirmwareCompatibilityStatus> {
+
+    var containsOS = false
+    var ospkgFound = false
+    var pkgOsVersion = DynamoYoctoOS.INVALID
+
+    // 1) Look for the OS package tarball (supports .tar.gz and .tar.gz.enc)
+    extractionFolder.listFiles()?.forEach { f ->
+        val match = f.baseNameForMatch()
+        if (match == ospkgTarGzFileName) {
+            ospkgFound = true
+
+            // decrypt to a temp file only if needed
+            val readable = f.decryptIfEnc(context)
+
+            when (val ver = Dynamo.extractYoctoVersion(context, readable)) {
+                is Outcome.Ok -> {
+                    lastEvaluatedFwUpdateOsVersion = SemVer.fromString(ver.value)
+                    containsOS = shouldContainOS(lastEvaluatedFwUpdateOsVersion)
+                    pkgOsVersion = DynamoYoctoOS.fromVersion(lastEvaluatedFwUpdateOsVersion)
+                    ProLog.i(MODULE_NAME, "OS pkg detected: $match, parsed=${lastEvaluatedFwUpdateOsVersion}")
+                }
+                is Outcome.Error -> {
+                    ProLog.e(MODULE_NAME, "Could not find yocto version in ${f.name}. Result=${ver.error}")
+                    return Outcome.Error(DynamoFirmwareCompatibilityStatus.Error)
+                }
+            }
+            return@forEach
+        }
+    }
+
+    // 2) If not found under OS name, also accept your SOM/application tarball
+    if (pkgOsVersion == DynamoYoctoOS.INVALID) {
+        extractionFolder.listFiles()?.forEach { f ->
+            val match = f.baseNameForMatch()
+            if (match == dynamoosTarGzFileName /* your second expected name */) {
+                val readable = f.decryptIfEnc(context)
+                when (val ver = Dynamo.extractYoctoVersion(context, readable)) {
+                    is Outcome.Ok -> {
+                        lastEvaluatedFwUpdateOsVersion = SemVer.fromString(ver.value)
+                        containsOS = shouldContainOS(lastEvaluatedFwUpdateOsVersion)
+                        pkgOsVersion = DynamoYoctoOS.fromVersion(lastEvaluatedFwUpdateOsVersion)
+                        ProLog.i(MODULE_NAME, "Alt OS pkg detected: $match, parsed=${lastEvaluatedFwUpdateOsVersion}")
+                    }
+                    is Outcome.Error -> {
+                        ProLog.e(MODULE_NAME, "Could not find yocto version in ${f.name}. Result=${ver.error}")
+                        return Outcome.Error(DynamoFirmwareCompatibilityStatus.Error)
+                    }
+                }
+                return@forEach
+            }
+        }
+    }
+
+    // 3) Fallback: if still not identified, allow the “OS update not included” path
+    if (pkgOsVersion == DynamoYoctoOS.INVALID) {
+        extractionFolder.listFiles()?.forEach { f ->
+            val match = f.baseNameForMatch()
+            if (match == dynamoAppTar /* your app tar name if you use it as a signal */) {
+                pkgOsVersion = DynamoYoctoOS.DUNFELL
+                ProLog.i(MODULE_NAME, "No explicit OS tar found; inferred app-only payload via $match")
+                return@forEach
+            }
+        }
+    }
+
+    // 4) Return same statuses your UI already handles
+    return Outcome.Ok(
+        if (pkgOsVersion == DynamoYoctoOS.INVALID) {
+            DynamoFirmwareCompatibilityStatus.OSUpdateNotIncluded
+        } else {
+            // keep whatever you were returning before after computing 'containsOS'
+            // (this line preserves your existing downstream flow)
+            DynamoFirmwareCompatibilityStatus.OSUpdateIncluded
+        }
+    )
+}
