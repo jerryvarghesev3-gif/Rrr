@@ -84,3 +84,42 @@ override suspend fun evaluateFirmwareCompatibility(
 }
 
 
+
+
+
+
+
+
+// enter loading
+update { state -> state.copy(firmwareCompatibilityStatus = DynamoFirmwareCompatibilityStatus.Evaluating) }
+
+val result: Outcome<DFirmwareCompatibilityStatus> = withContext(Dispatchers.IO) {
+    withTimeoutOrNull(30_000L) {
+        // 1) extract manifest from decrypted/unpacked BAS
+        when (val mf = eFirmwareService.extractFirmwareFile(firmwareFileInputStream)) {
+            is Outcome.Ok -> {
+                val manifest = mf.value
+                update { s -> s.copy(releaseManifest = manifest) }
+
+                // 2) run your existing compatibility logic
+                eFirmwareService.evaluateFirmwareCompatibility(
+                    bedStatusBloc.getSomOS(),
+                    manifest
+                ) // <-- must return Outcome<DFirmwareCompatibilityStatus>
+            }
+            is Outcome.Error -> {
+                // normalize type for the outer when{}
+                Outcome.Error(DFirmwareCompatibilityStatus.Error)
+            }
+        }
+    } ?: Outcome.Error(DFirmwareCompatibilityStatus.Error) // timeout -> error
+}
+
+// leave loading with a definitive state
+when (result) {
+    is Outcome.Ok -> update { s -> s.copy(firmwareCompatibilityStatus = result.value) }
+    is Outcome.Error -> {
+        ProLog.e(MODULE_NAME, "Firmware compatibility failed or timed out.")
+        update { s -> s.copy(firmwareCompatibilityStatus = DFirmwareCompatibilityStatus.Error) }
+    }
+}
