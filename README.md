@@ -107,3 +107,36 @@ override suspend fun extractFirmwareFile(
     }
 }
 
+
+
+
+
+
+
+
+
+
+private data class EncParams(val key: ByteArray, val iv: ByteArray)
+
+private fun readEncParamsFromBasHeader(bas: File): EncParams? {
+    // Example: first few KB contain lines like: KEY=..., IV=...
+    bas.inputStream().buffered().use { ins ->
+        val br = ins.reader(Charsets.UTF_8).buffered()
+        repeat(64) { // scan limited lines
+            val line = br.readLine() ?: return@repeat
+            if (line.startsWith("KEY=")) {
+                val keyHex = line.substringAfter("KEY=").trim()
+                val ivHex  = br.readLine()?.substringAfter("IV=")?.trim() ?: return null
+                return EncParams(keyHex.hexToBytes(), ivHex.hexToBytes())
+            }
+            if (line.startsWith("----")) return null // header done
+        }
+    }
+    return null
+}
+
+
+
+
+
+
