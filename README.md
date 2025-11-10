@@ -135,3 +135,50 @@ private fun resolvePlainIfEnc(
 
 
 
+
+
+
+
+
+// Put this INSIDE object AESEncryption
+fun decryptFileBlocking(
+    input: File,
+    output: File,
+    iv: ByteArray,
+    mode: Mode = Mode.GCM   // default to your current scheme
+): Boolean {
+    return try {
+        val cipher = when (mode) {
+            Mode.CBC_PKCS5 -> {
+                require(iv.size == 16) { "CBC IV must be 16 bytes" }
+                javax.crypto.Cipher.getInstance(TRANSFORM_CBC).apply {
+                    init(javax.crypto.Cipher.DECRYPT_MODE, encryptionKey,
+                        javax.crypto.spec.IvParameterSpec(iv))
+                }
+            }
+            Mode.GCM -> {
+                require(iv.size == GCM_NONCE_LENGTH) { "GCM IV (nonce) must be $GCM_NONCE_LENGTH bytes" }
+                javax.crypto.Cipher.getInstance(algorithm).apply {
+                    init(javax.crypto.Cipher.DECRYPT_MODE, encryptionKey,
+                        javax.crypto.spec.GCMParameterSpec(GCM_TAG_LENGTH * 8, iv))
+                }
+            }
+        }
+
+        java.io.FileInputStream(input).use { fis ->
+            javax.crypto.CipherInputStream(fis, cipher).use { cis ->
+                java.io.FileOutputStream(output).use { fos ->
+                    cis.copyTo(fos)
+                    fos.flush()
+                }
+            }
+        }
+        true
+    } catch (t: Throwable) {
+        ProLog.e(MODULE_NAME, msg = "decryptFileBlocking failed: ${t.message}")
+        false
+    }
+}
+
+
+
