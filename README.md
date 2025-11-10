@@ -77,3 +77,71 @@ bool PackageExtractor::extractPackage(const QString sourceFilePath,
 }
 
 
+
+
+
+
+
+
+// PackageExtractor.cpp
+#include <QFileInfo>
+#include <QDir>
+#include <QFile>
+#include <QDebug>
+#include "JlCompress.h"
+
+// tiny helper: does dest already contain files?
+static bool hasFiles(const QString& folder) {
+    QDir d(folder);
+    return !d.entryList(QDir::Files | QDir::NoDotAndDotDot).isEmpty();
+}
+
+/**
+ * Unpacks a .bas (ZIP) into destinationFolderPath.
+ * - does NOT touch/expand any inner *.tar.gz.enc; they will be written as-is.
+ * - returns true when at least one file is present in destinationFolderPath.
+ */
+bool PackageExtractor::extractPackage(const QString sourceFilePath,
+                                      const QString destinationFolderPath)
+{
+    qDebug() << "[FW] extractPackage src:" << sourceFilePath
+             << " dst:" << destinationFolderPath;
+
+    // 0) quick sanity
+    QFileInfo srcInfo(sourceFilePath);
+    if (!srcInfo.exists() || !srcInfo.isFile() || srcInfo.size() <= 0) {
+        qDebug() << "[FW] BAS not found or empty:" << sourceFilePath;
+        return false;
+    }
+
+    // 1) ensure destination exists
+    QDir destDir(destinationFolderPath);
+    if (!destDir.exists()) {
+        if (!QDir().mkpath(destinationFolderPath)) {
+            qDebug() << "[FW] Dest not accessible:" << destinationFolderPath;
+            return false;
+        }
+    }
+
+    // Optional: clean previous run (keep it if Kotlin already cleans)
+    // for (const auto& name : destDir.entryList(QDir::Files | QDir::NoDotAndDotDot))
+    //     destDir.remove(name);
+
+    // 2) unzip the BAS as a ZIP *directory* into dest
+    //    (this writes inner files such as firmware_imx6_dynamo.tar.gz.enc as-is)
+    const QStringList extracted = JlCompress::extractDir(sourceFilePath, destinationFolderPath);
+
+    if (!extracted.isEmpty()) {
+        qDebug() << "[FW] extracted files:" << extracted.size();
+        return true;
+    }
+
+    // 3) Some Android builds write out files despite extractDir returning empty
+    if (hasFiles(destinationFolderPath)) {
+        qDebug() << "[FW] ZIP extraction empty, but destination already contains files. Assuming success.";
+        return true;
+    }
+
+    qDebug() << "[FW] JlCompress::extractDir returned empty for" << sourceFilePath;
+    return false;
+}
