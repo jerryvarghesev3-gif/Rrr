@@ -160,3 +160,68 @@ private fun resolvePlainIfEnc(
 
 
 
+
+
+
+
+
+
+
+
+
+fun dynamoExtractYoctoVersion(
+    context: Context,
+    targzFile: File,
+    basFile: File       // <— add BAS here so resolvePlainIfEnc can pull KEY/IV
+): Outcome<String> {
+    var temp: File? = null
+
+    return try {
+        // 1) If *.tar.gz.enc or *.bin.enc, decrypt next to cache and read that.
+        val (toRead, isTemp) = resolvePlainIfEnc(context, targzFile, basFile)
+        if (isTemp) temp = toRead
+
+        var outcome: Outcome<String> = Outcome.Error("${targzFile.name} invalid input")
+
+        // 2) We only parse the OS package tarballs
+        if (targzFile.name == dynamoosTarGzFileName || targzFile.name == dynamamosTarGzFileName) {
+            // 3) Inside the tar.gz look for the "hillrom-version" file and read its text
+            when (val hillromVersion = searchTarGzFile(toRead, searchFileName = "hillrom-version")) {
+                is Outcome.Ok -> {
+                    val lines = hillromVersion.value.decodeToString()
+                        .split('\n')
+                        .map { it.trim() }
+
+                    // 4) Find a line that contains "Version:" and extract X.Y or X.Y.Z…
+                    var found: String? = null
+                    lines.forEach { line ->
+                        if (line.contains("Version:", ignoreCase = true)) {
+                            val regex = Regex("""\d+(?:\.\d+)+""")
+                            found = regex.find(line)?.value
+                            return@forEach
+                        }
+                    }
+
+                    outcome = if (found != null) {
+                        ProLog.i(MODULE_NAME, msg = "${targzFile.name} OS version = $found")
+                        Outcome.Ok(found!!)
+                    } else {
+                        ProLog.e(MODULE_NAME, msg = "Failed to decode OS version.")
+                        Outcome.Error("Failed to decode OS version.")
+                    }
+                }
+                is Outcome.Error -> {
+                    outcome = Outcome.Error(hillromVersion.error as String)
+                }
+            }
+        }
+
+        outcome
+    } catch (t: Throwable) {
+        Outcome.Error("Yocto version parse failed: ${t.message}")
+    } finally {
+        // Only delete our temp (never the original)
+        temp?.delete()
+    }
+}
+
