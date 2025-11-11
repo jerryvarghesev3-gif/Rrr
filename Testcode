@@ -96,3 +96,68 @@ private fun searchTarGzFile(
 
 
 
+
+
+
+
+
+
+
+
+
+override suspend fun evaluateFirmwareCompatibility(
+    activeOsVersion: DynamoYoctoOS,
+    releaseManifest: SoftwareReleaseManifest
+): Outcome<DynamoFirmwareCompatibilityStatus> {
+
+    var containsOS = false
+    var ospkgFound = false
+    var pkgOsVersion = DynamoYoctoOS.INVALID
+
+    extractionFolder.listFiles()?.forEach { f ->
+        // If this is the combined IMX package, it *always* includes the OS
+        if (f.name.startsWith("firmware_imx", ignoreCase = true) && f.name.isTarGzLike()) {
+            ospkgFound = true
+            when (val ver = DynamoextractYoctoVersion(f)) {
+                is Outcome.Ok -> {
+                    val lastEval = SemVer.fromString(ver.value)
+                    containsOS = shouldContainOS(lastEval)
+                    pkgOsVersion = DynamoYoctoOS.fromVersion(lastEval)
+                }
+                is Outcome.Error -> {
+                    ProLog.e(MODULE_NAME, "Could not find yocto version in ${f.name}. Result: ${ver.error}")
+                    return Outcome.Error(DynamoFirmwareCompatibilityStatus.Error)
+                }
+            }
+            return@forEach
+        }
+
+        // (Optional) If you still support a legacy separate OS pkg name, keep it:
+        if (f.name == OSPKG_TAR_GZ_FILE_NAME /* like "ospkg.tar.gz" */ || f.name == OSPKG_TAR_GZ_FILE_NAME + ENC) {
+            ospkgFound = true
+            when (val ver = DynamoextractYoctoVersion(f)) {
+                is Outcome.Ok -> {
+                    val lastEval = SemVer.fromString(ver.value)
+                    containsOS = shouldContainOS(lastEval)
+                    pkgOsVersion = DynamoYoctoOS.fromVersion(lastEval)
+                }
+                is Outcome.Error -> {
+                    ProLog.e(MODULE_NAME, "Could not find yocto version in ${f.name}. Result: ${ver.error}")
+                    return Outcome.Error(DynamoFirmwareCompatibilityStatus.Error)
+                }
+            }
+            return@forEach
+        }
+    }
+
+    // If we never parsed a version but we *did* see the combined IMX package,
+    // you can still flag that an OS update is included (version unknown).
+    if (!ospkgFound) {
+        return Outcome.Ok(DynamoFirmwareCompatibilityStatus.OSUpdateNotIncluded)
+    }
+
+    // At this point we saw the package and decoded a version
+    // -> build your final status using containsOS / pkgOsVersion
+    // (replace with your actual return)
+    return Outcome.Ok(DynamoFirmwareCompatibilityStatus.OSUpdateIncluded(pkgOsVersion, containsOS))
+}
