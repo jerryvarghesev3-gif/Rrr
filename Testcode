@@ -40,3 +40,74 @@ private fun decryptEncFileTo(encFile: File, plainOut: File) {
         }
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+override suspend fun extractFirmwareFile(
+    firmwareFileInputStream: InputStream
+): Outcome<SoftwareReleaseManifest> = withContext(Dispatchers.IO) {
+
+    // 1) Write the incoming BAS to a temp file in cache (auto-clean it)
+    val basFile = File.createTempFile("firmware", ".bas", context.cacheDir).apply {
+        deleteOnExit()
+    }
+
+    try {
+        firmwareFileInputStream.use { input ->
+            basFile.outputStream().buffered().use { out ->
+                input.copyTo(out, DEFAULT_BUFFER_SIZE)
+                out.flush()
+            }
+        }
+
+        // 2) Reset extraction folder
+        if (extractionFolder.exists()) extractionFolder.deleteRecursively()
+        if (!extractionFolder.mkdirs() && !extractionFolder.exists()) {
+            ProLog.w(MODULE_NAME, "Unable to create extraction folder: ${extractionFolder.absolutePath}")
+            return@withContext Outcome.Error(DynamoFirmwareCompatibilityStatus.Error)
+        }
+
+        // 3) Extract BAS contents
+        if (!dynamo.extractBasFile(basFile.absolutePath, extractionFolder.absolutePath)) {
+            ProLog.w(MODULE_NAME, "Unable to extract bas file: ${basFile.name}")
+            return@withContext Outcome.Error(DynamoFirmwareCompatibilityStatus.Error)
+        }
+
+        // 4) Locate manifest (robust: any depth, common names)
+        val manifestFile = extractionFolder
+            .walkTopDown()
+            .firstOrNull { f ->
+                f.isFile && (
+                    f.name.equals("manifest.json", true) ||
+                    f.name.equals("manifest", true) ||
+                    f.name.contains("manifest", true)
+                )
+            }
+            ?: return@withContext Outcome.Error(DynamoFirmwareCompatibilityStatus.Error)
+
+        // 5) Parse manifest
+        val releaseManifest = try {
+            manifestFile.inputStream().buffered().use { ManifestParser().parse(it) }
+        } catch (e: Exception) {
+            ProLog.w(MODULE_NAME, "Unable to parse manifest file: ${e.message}")
+            return@withContext Outcome.Error(e)
+        }
+
+        Outcome.Ok(releaseManifest)
+    } catch (e: Exception) {
+        ProLog.e(MODULE_NAME, "extractFirmwareFile exception: ${e.message}")
+        Outcome.Error(e)
+    } finally {
+        // 6) Always clean up the temp BAS
+        runCatching { basFile.delete() }
+    }
+}
