@@ -1,1 +1,42 @@
 ll
+
+
+
+// somewhere above (already in your file)
+private const val algorithm = "AES/GCM/NoPadding"
+// encryptionKey must be a SecretKeySpec created from your real key bytes
+// e.g. private val encryptionKey = SecretKeySpec(MY_KEY_BYTES, "AES")
+private const val GCM_TAG_LENGTH = 16           // bytes (128-bit tag)
+private const val GCM_NONCE_LENGTH = 12         // bytes (96-bit IV)
+
+// ---- Decrypt an .enc file -> plainOut ----
+private fun decryptEncFileTo(encFile: File, plainOut: File) {
+    FileInputStream(encFile).use { fis ->
+        // 1) read IV/nonce (exactly 12 bytes). Make sure we fill the buffer fully.
+        val iv = ByteArray(GCM_NONCE_LENGTH)
+        var off = 0
+        while (off < iv.size) {
+            val r = fis.read(iv, off, iv.size - off)
+            if (r == -1) throw IllegalStateException("Encrypted file missing IV")
+            off += r
+        }
+
+        // 2) init GCM cipher with your existing encryptionKey
+        val spec = GCMParameterSpec(GCM_TAG_LENGTH * 8, iv)   // length in BITS
+        val cipher = javax.crypto.Cipher.getInstance(algorithm)
+        cipher.init(javax.crypto.Cipher.DECRYPT_MODE, encryptionKey, spec)
+
+        // 3) stream-decrypt the rest of the file (ciphertext + tag)
+        javax.crypto.CipherInputStream(fis, cipher).use { cis ->
+            FileOutputStream(plainOut).use { fos ->
+                val buf = ByteArray(8 * 1024)
+                while (true) {
+                    val n = cis.read(buf)
+                    if (n == -1) break
+                    fos.write(buf, 0, n)
+                }
+                fos.fd.sync()
+            }
+        }
+    }
+}
