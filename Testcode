@@ -1,1 +1,176 @@
 ll
+
+
+
+// Recursively searches a .tar.gz (or .tar.gz.enc) file for a file named searchFileName.
+// Returns the first instance of searchFileName found as a byte array.
+private fun searchTarGzFile(
+    targzFileToSearch: File,
+    searchFileName: String
+): Outcome<ByteArray> {
+
+    if (!targzFileToSearch.exists() || !targzFileToSearch.isTarGzLike()) {
+        return Outcome.Error("${targzFileToSearch.name} invalid input")
+    }
+
+    return searchTarGzFile(
+        TarInputStream(BufferedInputStream(GZIPInputStream(targzFileToSearch.inputStream()))),
+        searchFileName
+    )
+}
+
+
+
+
+
+
+fun DynamoextractYoctoVersion(targzFile: File): Outcome<String> {
+    var outcome: Outcome<String> = Outcome.Error("${targzFile.name} invalid input")
+
+    // Accept both *.tar.gz and *.tar.gz.enc
+    if (!targzFile.isTarGzLike()) {
+        return outcome
+    }
+
+    // hillrom-version file lives inside the OS tarball
+    val hillromVersion = searchTarGzFile(targzFile, "hillrom-version")
+    when (hillromVersion) {
+        is Outcome.Ok -> {
+            val lines = hillromVersion.value
+                .decodeToString()
+                .split('\n')
+                .map { it.trim() }
+
+            lines.forEach { line ->
+                if (line.contains("Version:", ignoreCase = true)) {
+                    // grab version number like 1.0.0.1
+                    val regex = Regex("\\d+(\\.\\d+)+")
+                    val match = regex.find(line)?.value
+                    outcome = if (match != null) {
+                        ProLog.i(MODULE_NAME, "${targzFile.name} OS version = $match")
+                        Outcome.Ok(match)
+                    } else {
+                        ProLog.e(MODULE_NAME, "Failed to decode OS version.")
+                        Outcome.Error("Failed to decode OS version.")
+                    }
+                    return@forEach
+                }
+            }
+        }
+        is Outcome.Error -> {
+            outcome = Outcome.Error(hillromVersion.error as String)
+        }
+    }
+
+    return outcome
+}
+
+
+
+
+
+override suspend fun evaluateFirmwareCompatibility(
+    activeOsVersion: DynamoYoctoOS,
+    releaseManifest: SoftwareReleaseManifest,
+): Outcome<DynamoFirmwareCompatibilityStatus> {
+
+    var containsOS = false
+    var osPkgFound = false
+    var pkgOsVersion = DynamoYoctoOS.INVALID
+
+    // 1) Find the SOM-OS package (firmware_imx*.tar.gz or .tar.gz.enc)
+    extractionFolder.listFiles()?.forEach { file: File ->
+        if (file.name.startsWith("firmware_imx", ignoreCase = true) && file.isTarGzLike()) {
+            osPkgFound = true
+
+            when (val ver = DynamoextractYoctoVersion(file)) {
+                is Outcome.Ok -> {
+                    // Convert extracted string (e.g. "1.0.0.1") into SemVer / DynamoYoctoOS
+                    LastEvaluatedFwUpdateOsVersion = SemVer.fromString(ver.value)
+
+                    // Decide whether OS should be included:
+                    // only if package OS != device OS
+                    containsOS = shouldContainOS(LastEvaluatedFwUpdateOsVersion)
+
+                    pkgOsVersion = DynamoYoctoOS.fromVersion(LastEvaluatedFwUpdateOsVersion)
+                }
+                is Outcome.Error -> {
+                    ProLog.e(
+                        MODULE_NAME,
+                        "Could not find yocto version in ${file.name}. Result: ${ver.error as String}"
+                    )
+                    return Outcome.Error(DynamoFirmwareCompatibilityStatus.Error)
+                }
+            }
+
+            // we found the OS package, no need to scan more
+            return@forEach
+        }
+    }
+
+    // If we never found the OS package, but the .bas includes an OS update,
+    // treat as "OS update not included" for this encrypted flow.
+    if (!osPkgFound) {
+        ProLog.w(MODULE_NAME, "No SOM-OS package found in extracted files.")
+        return Outcome.Ok(DynamoFirmwareCompatibilityStatus.OSUpdateNotIncluded)
+    }
+
+    // 2) If package OS == INVALID, fall back to checking for dynamoSOMApp
+    if (pkgOsVersion == DynamoYoctoOS.INVALID) {
+        extractionFolder.listFiles()?.forEach { file: File ->
+            if (file.name == dynamoAppTar) {
+                pkgOsVersion = DynamoYoctoOS.DUNFELL
+                return@forEach
+            }
+        }
+    }
+
+    // 3) Finally decide compatibility status
+
+    if (!containsOS) {
+        // Package OS is same as active OS -> no OS update needed
+        return Outcome.Ok(DynamoFirmwareCompatibilityStatus.OSUpdateNotRequired)
+    }
+
+    // Package contains OS and version differs -> OS must be included
+    return Outcome.Ok(DynamoFirmwareCompatibilityStatus.OSUpdateNotIncluded)
+}
+
+
+
+
+
+
+override suspend fun evaluateFirmwareCompatibility(
+    firmwareFileName: String,
+    firmwareFileInputStream: InputStream,
+    somVersion: SemVer,
+    isBasMode: Boolean,
+    boardsToUpdate: List<DynamoBoard>
+) {
+    update { it.copy(firmwareCompatibilityStatus = DynamoFirmwareCompatibilityStatus.Evaluating) }
+
+    try {
+        val releaseManifestOutcome =
+            dynamoFirmwareService.extractFirmwareFile(firmwareFileInputStream)
+        if (releaseManifestOutcome is Outcome.Error) {
+            update { it.copy(firmwareCompatibilityStatus = DynamoFirmwareCompatibilityStatus.Error) }
+            return
+        }
+
+        val result = dynamoFirmwareService.evaluateFirmwareCompatibility(
+            bedStatusBloc.getSomOS(),
+            releaseManifestOutcome.value
+        )
+
+        if (result is Outcome.Ok) {
+            update { it.copy(firmwareCompatibilityStatus = result.value) }
+        } else {
+            update { it.copy(firmwareCompatibilityStatus = DynamoFirmwareCompatibilityStatus.Error) }
+        }
+    } catch (e: Exception) {
+        ProLog.e(MODULE_NAME, "Firmware Compatibility exception: ${e.message}")
+        update { it.copy(firmwareCompatibilityStatus = DynamoFirmwareCompatibilityStatus.Error) }
+    }
+}
+
