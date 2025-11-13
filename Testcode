@@ -174,3 +174,16 @@ override suspend fun evaluateFirmwareCompatibility(
     }
 }
 
+
+
+
+
+
+
+private const val TAR_GZ = ".tar.gz"
+private const val TAR_GZ_ENC = ".tar.gz.enc"
+
+// Treat both *.tar.gz and *.tar.gz.enc as "tar.gz-like"
+private fun File.isTarGzLike(): Boolean =
+    name.endsWith(TAR_GZ, ignoreCase = true) ||
+    name.endsWith(TAR_GZ_ENC, ignoreCase = true)
