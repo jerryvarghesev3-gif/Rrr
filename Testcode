@@ -1,1 +1,86 @@
 ll
+
+
+private fun searchTarGzFileFromFile(
+    targzFile: File,
+    searchFileName: String
+): Outcome<ByteArray> {
+
+    if (!targzFile.exists())
+        return Outcome.Error("${targzFile.name} missing")
+
+    // decrypt if *.enc
+    val usable = maybeDecryptToTemp(targzFile)
+
+    TarInputStream(GZIPInputStream(usable.inputStream())).use { tar ->
+        return searchTarGzFileFromStream(tar, searchFileName)
+    }
+}
+
+
+
+
+
+
+
+private fun searchTarGzFileFromStream(
+    tarStream: TarInputStream,
+    searchFileName: String
+): Outcome<ByteArray> {
+
+    var outcome: Outcome<ByteArray> = Outcome.Error("$searchFileName not found")
+
+    try {
+        var entry = tarStream.nextEntry
+
+        while (entry != null) {
+
+            var name = entry.name
+
+            if (name.contains(searchFileName) && !entry.isDirectory) {
+                val index = name.lastIndexOf('/')
+                if (index != -1) name = name.substring(index + 1)
+
+                if (name == searchFileName) {
+                    val buf = ByteArrayOutputStream()
+                    val block = ByteArray(2048)
+
+                    while (true) {
+                        val n = tarStream.read(block)
+                        if (n <= 0) break
+                        buf.write(block, 0, n)
+                    }
+
+                    return Outcome.Ok(buf.toByteArray())
+                }
+            }
+
+            // nested tar.gz
+            if (name.endsWith(".tar.gz")) {
+                try {
+                    val nested = searchTarGzFileFromStream(
+                        TarInputStream(GZIPInputStream(tarStream)),
+                        searchFileName
+                    )
+
+                    if (nested is Outcome.Ok)
+                        return nested
+
+                } catch (_: Exception) { }
+            }
+
+            entry = tarStream.nextEntry
+        }
+
+    } catch (e: Exception) {
+        return Outcome.Error("Exception while searching: $e")
+    }
+
+    return outcome
+}
+
+
+
+
+
+
