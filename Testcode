@@ -1,1 +1,61 @@
 ll
+
+
+fun DynamoextractYoctoVersion(targzFile: File): Outcome<String> {
+    var outcome: Outcome<String> =
+        Outcome.Error("${targzFile.name} invalid input")
+
+    // Only accept things that look like firmware tarballs
+    if (!targzFile.name.isTarGzLike()) {
+        return outcome
+    }
+
+    // Try to read the hillrom-version file from the archive
+    when (val hillromVersion =
+        searchTarGzFile(targzFile, HILLROM_VERSION_FILE)) {
+
+        is Outcome.Ok -> {
+            val lines = hillromVersion.value
+                .decodeToString()
+                .split('\n')
+                .map { it.trim() }
+
+            // Look for a line that contains "Version:"
+            for (line in lines) {
+                if (!line.contains("Version:", ignoreCase = true)) continue
+
+                val regex  = Regex("\\d+(?:\\.\\d+)+")
+                val match  = regex.find(line)?.value
+
+                outcome = if (match != null) {
+                    ProLog.i(
+                        MODULE_NAME,
+                        "${targzFile.name} OS version = $match"
+                    )
+                    Outcome.Ok(match)
+                } else {
+                    ProLog.e(MODULE_NAME, "Failed to decode OS version.")
+                    Outcome.Error("Failed to decode OS version.")
+                }
+
+                // Stop after first Version line
+                break
+            }
+
+            // No line with "Version:" found
+            if (outcome is Outcome.Error) {
+                ProLog.e(
+                    MODULE_NAME,
+                    "Failed to decode OS version (no Version line)."
+                )
+            }
+        }
+
+        is Outcome.Error -> {
+            // Propagate underlying error from searchTarGzFile
+            outcome = Outcome.Error(hillromVersion.error as String)
+        }
+    }
+
+    return outcome
+}
