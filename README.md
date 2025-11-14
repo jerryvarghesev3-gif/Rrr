@@ -1,5 +1,26 @@
 ll
 
+private fun SoftwareReleaseManifest.somOsVersion(): SemVer? {
+    // Find first package, then the SOM-OS firmware component
+    val somComponent = this.centrellaPackages
+        .firstOrNull()
+        ?.centrellaComponents
+        ?.firstOrNull { c ->
+            c.typeId.equals("SOM-OS", ignoreCase = true) &&
+            c.kind.equals("firmware", ignoreCase = true)
+        }
+
+    // Convert the component's <Version> string to SemVer
+    return somComponent
+        ?.version
+        ?.takeIf { it.isNotBlank() }
+        ?.let { SemVer.fromString(it) }
+}
+
+
+
+
+
 
 
 // Extension style, same “packages.centrellaComponents.forEach { … }” idea
