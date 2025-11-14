@@ -1,1 +1,151 @@
 ll
+
+
+
+// In DynamoFirmwareService.kt (or wherever it already lives)
+
+override suspend fun extractFirmwareFile(
+    firmwareFileInputStream: InputStream
+): Outcome<SoftwareReleaseManifest> = withContext(Dispatchers.IO) {
+
+    // Temp BAS file in cache dir
+    val basFile = File.createTempFile("firmware", ".bas", context.cacheDir)
+    basFile.deleteOnExit()
+
+    try {
+        // 1) Copy incoming stream to temp BAS
+        basFile.outputStream().buffered().use { os ->
+            firmwareFileInputStream.copyTo(os, DEFAULT_BUFFER_SIZE)
+            os.flush()
+        }
+
+        // 2) Prepare / clean extraction folder
+        if (extractionFolder.exists()) {
+            if (!extractionFolder.deleteRecursively()) {
+                ProLog.w(
+                    MODULE_NAME,
+                    "Unable to clean extraction folder: ${extractionFolder.absolutePath}"
+                )
+            }
+        }
+        if (!extractionFolder.exists() && !extractionFolder.mkdirs()) {
+            ProLog.e(MODULE_NAME, "Unable to create extraction folder: ${extractionFolder.absolutePath}")
+            return@withContext Outcome.Error(DynamoFirmwareCompatibilityStatus.Error)
+        }
+
+        // 3) Call native BAS extractor
+        if (!dynamo.extractBasFile(basFile.absolutePath, extractionFolder.absolutePath)) {
+            ProLog.e(MODULE_NAME, "Unable to extract bas file: ${basFile.name}")
+            return@withContext Outcome.Error(DynamoFirmwareCompatibilityStatus.Error)
+        }
+
+        // 4) Find manifest.json inside extracted tree
+        val manifestFile = extractionFolder
+            .walkTopDown()
+            .firstOrNull { it.isFile && it.name.equals("manifest.json", ignoreCase = true) }
+
+        if (manifestFile == null) {
+            ProLog.e(MODULE_NAME, "manifest.json not found in extracted BAS")
+            return@withContext Outcome.Error(DynamoFirmwareCompatibilityStatus.Error)
+        }
+
+        // 5) Parse manifest
+        val releaseManifest = try {
+            manifestFile.inputStream().buffered().use { ManifestParser().parse(it) }
+        } catch (e: Exception) {
+            ProLog.e(MODULE_NAME, "Unable to parse manifest file: ${e.message}")
+            return@withContext Outcome.Error(DynamoFirmwareCompatibilityStatus.Error)
+        }
+
+        Outcome.Ok(releaseManifest)
+    } catch (e: Exception) {
+        ProLog.e(MODULE_NAME, "extractFirmwareFile exception: ${e.message}")
+        Outcome.Error(DynamoFirmwareCompatibilityStatus.Error)
+    } finally {
+        // 6) Always clean up temp BAS – avoids piling up files & GC pressure
+        runCatching { basFile.delete() }
+    }
+}
+
+
+
+
+
+
+
+override suspend fun evaluateFirmwareCompatibility(
+    activeOsVersion: DynamoYoctoOS,
+    releaseManifest: SoftwareReleaseManifest
+): Outcome<DynamoFirmwareCompatibilityStatus> {
+
+    var containsOS = false          // whether BAS is *supposed* to carry an OS
+    var osPkgFound = false          // whether we actually found an OS tar in the BAS
+    var pkgOsVersion = DynamoYoctoOS.INVALID
+    var lastEvaluatedFwUpdateOsVersion: SemVer? = null
+
+    // 1) Scan extracted folder once, find SOM-OS package
+    extractionFolder.listFiles()?.forEach { file ->
+        // we only care about SOM OS package, ex: "firmware_imx6_dynamo.tar.gz[.enc]"
+        if (!file.name.startsWith("firmware_imx", ignoreCase = true)) return@forEach
+        if (!file.name.isTarGzLike()) return@forEach
+
+        osPkgFound = true
+
+        // 2) Extract OS version (supports .tar.gz and .tar.gz.enc via tarUtilities.kt)
+        when (val ver = DynamoextractYoctoVersion(file)) {
+            is Outcome.Ok -> {
+                lastEvaluatedFwUpdateOsVersion = SemVer.fromString(ver.value)
+
+                // Whether this BAS should update OS – your existing rule
+                containsOS = shouldContainOS(lastEvaluatedFwUpdateOsVersion!!)
+
+                // Map SemVer -> DynamoYoctoOS enum
+                pkgOsVersion = DynamoYoctoOS.fromVersion(lastEvaluatedFwUpdateOsVersion!!)
+            }
+            is Outcome.Error -> {
+                ProLog.e(
+                    MODULE_NAME,
+                    "Could not find yocto version in ${file.name}. Result: ${ver.error as String}"
+                )
+                return Outcome.Error(DynamoFirmwareCompatibilityStatus.Error)
+            }
+        }
+
+        // We found the SOM package; no need to keep scanning other files
+        return@forEach
+    }
+
+    // 3) Fallback: if no explicit OS version was found but you still want to
+    // treat some package as having DUNFELL, keep your old dynamoAppTar rule.
+    if (pkgOsVersion == DynamoYoctoOS.INVALID) {
+        extractionFolder.listFiles()?.forEach { file ->
+            if (file.name == dynamoAppTar) {  // keep your existing constant
+                pkgOsVersion = DynamoYoctoOS.DUNFELL
+                return@forEach
+            }
+        }
+    }
+
+    // 4) Decide final status (this is what drives Wi-Fi/USB popup behaviour)
+    val status = when {
+        // Either we didn’t find OS, or manifest says no OS should be there
+        !osPkgFound || !containsOS || pkgOsVersion == DynamoYoctoOS.INVALID ->
+            DynamoFirmwareCompatibilityStatus.OSUpdateNotIncluded
+
+        // Package OS is <= currently running OS – no need to push dynamoSOMApp
+        pkgOsVersion <= activeOsVersion ->
+            DynamoFirmwareCompatibilityStatus.OSUpdateNotRequired
+
+        // Otherwise, there *is* an OS update included and newer
+        else ->
+            DynamoFirmwareCompatibilityStatus.OSUpdateIncluded
+    }
+
+    return Outcome.Ok(status)
+}
+
+
+
+
+
+
