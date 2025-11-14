@@ -2,6 +2,23 @@ ll
 
 
 
+// Extension style, same “packages.centrellaComponents.forEach { … }” idea
+private fun SoftwareReleaseManifest.somOsVersion(): SemVer? {
+    // Find the SOM-OS firmware component in the manifest
+    val somComponent = centrellaComponents.firstOrNull { c ->
+        c.typeId.equals("SOM-OS", ignoreCase = true) &&
+        c.kind.equals("firmware", ignoreCase = true)
+    }
+
+    // Convert its <Version> string (e.g. "1.0.0.1") to SemVer
+    return somComponent
+        ?.version
+        ?.takeIf { it.isNotBlank() }
+        ?.let { SemVer.fromString(it) }
+}
+
+
+
 
 private fun somOsVersionFromManifest(manifest: SoftwareReleaseManifest): SemVer? {
     val somComponent = manifest.components
