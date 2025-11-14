@@ -1,5 +1,8 @@
 ll
 
+if ((SemVer.fromString(dynamo.getOperatingSystemVersion()) == releaseManifest.somOsVersion())
+
+
 private fun SoftwareReleaseManifest.somOsVersion(): SemVer? {
     // Find first package, then the SOM-OS firmware component
     val somComponent = this.centrellaPackages
