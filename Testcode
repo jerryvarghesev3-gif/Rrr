@@ -1,1 +1,30 @@
 ll
+
+
+ColumnLayout {
+    Layout.row: 7
+    Layout.column: 0
+    Layout.alignment: Qt.AlignCenter
+
+    // distance between button and white box
+    spacing: Math.max(5, window.baseFontSize * 0.15)
+
+    PillButton {
+        Layout.alignment: Qt.AlignCenter
+        horizontalPadding: 30
+        verticalPadding: 20
+        text: "Get certificate info"
+        onClicked: { LCM.getCertificateInfoByCANorSSH(); }
+    }
+
+    PageListSelectSoftware {
+        Layout.alignment: Qt.AlignHCenter
+        Layout.topMargin: window.baseFontSize * 0.1   // small fine-tuning
+
+        visible: true
+        widthCustom: 500 * multiplicator
+        heightCustom: 240
+        visibleSquareButton: false
+        id: pageListSelectSoft2
+    }
+}
