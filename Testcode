@@ -1,1 +1,38 @@
 ll
+
+
+
+Rectangle {
+    id: connectionEthPopup
+    property string sourcePathConfigFile
+
+    // scale factor based on window size (design: 1920x1200)
+    property real scaleFactor: Math.min(parent.width  / 1920,
+                                        parent.height / 1200)
+
+    width: parent.width / 2
+    height: parent.height / 2
+    anchors.centerIn: parent
+    radius: width / 20
+    z: 10
+    visible: parent.visible
+
+    border.color: borderColor
+    border.width: 10
+    color: colorDarkBlue
+
+    // scale the whole popup so it fits any screen
+    transform: Scale {
+        origin.x: connectionEthPopup.width  / 2
+        origin.y: connectionEthPopup.height / 2
+        xScale: connectionEthPopup.scaleFactor
+        yScale: connectionEthPopup.scaleFactor
+    }
+
+    // ⬇️ keep ALL your existing properties, functions, ColumnLayout, etc. here ⬇️
+    // property string borderColor: ...
+    // property int canState: ...
+    // function updateConnectorSFTP() { ... }
+    // Text { id: mainText ... }
+    // ColumnLayout { ... }
+}
