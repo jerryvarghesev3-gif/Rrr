@@ -28,3 +28,23 @@ ColumnLayout {
         id: pageListSelectSoft2
     }
 }
+
+
+
+
+
+
+
+GridLayout {
+    id: glayLogs
+    anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter }
+    rows: 8
+    columns: 2
+
+    // OLD:
+    // rowSpacing: 20
+    // columnSpacing: 10
+
+    rowSpacing: Math.max(10, window.height * 0.015)
+    columnSpacing: Math.max(10, window.baseFontSize * 0.3)
+}
