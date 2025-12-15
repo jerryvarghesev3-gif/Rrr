@@ -113,3 +113,38 @@ packages.centrellaComponents.forEach { component ->
 
     // ... keep your existing checks + upload logic unchanged ...
 }
+
+
+
+
+
+
+fun DextractYoctoVersion(targzFile: File): Outcome<String> {
+    // ✅ If it’s not the DOS OS tar, just say "not applicable"
+    if (targzFile.name != dosTarGzFileName) {
+        return Outcome.Error("NOT_OS_TAR")   // or Outcome.Ok("") if you prefer
+    }
+
+    // existing DOS parsing logic below (unchanged)
+    return when (val hillromVersion = searchTarGzFile(targzFile, "hillrom-version")) {
+        is Outcome.Ok -> {
+            val lines = hillromVersion.value.decodeToString()
+                .split('\n')
+                .map { it.trim() }
+
+            var matchValue: String? = null
+            lines.forEach { line ->
+                if (line.contains("Version:")) {
+                    val regex = Regex("\\d+(\\.\\d+)+")
+                    matchValue = regex.find(line)?.value
+                    return@forEach
+                }
+            }
+
+            if (matchValue != null) Outcome.Ok(matchValue!!)
+            else Outcome.Error("Failed to decode os version.")
+        }
+
+        is Outcome.Error -> Outcome.Error(hillromVersion.error as String)
+    }
+}
