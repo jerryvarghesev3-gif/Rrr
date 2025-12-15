@@ -1,1 +1,105 @@
 ll
+
+
+
+private val DosTarGzFileName = "firmware_imx6_d.tar.gz.enc"
+
+override suspend fun evaluateFirmwareCompatibility(
+    activeOsVersion: DYoctoOS,
+    releaseManifest: SoftwareReleaseManifest,
+): Outcome<DFirmwareCompatibilityStatus> {
+
+    var containsOS = false
+    var ospkgFound = false
+    var pkgOsVersion = DYoctoOS.INVALID
+
+    var shouldSendOsUpdate = false
+    var appTarFound = false
+    var error: DFirmwareCompatibilityStatus? = null
+
+    // -------------------------
+    // 1) OS tar check (only if ospkgTarGzFileName exists)
+    // -------------------------
+    extractionFolder.listFiles()?.forEach { file ->
+        if (file.name == ospkgTarGzFileName) {
+            ospkgFound = true
+
+            when (val ver = DextractYoctoVersion(file)) {
+                is Outcome.Ok -> {
+                    val pkgOs: SemVer? = SemVer.fromString(ver.value)
+                    val deviceOs: SemVer? = SemVer.fromString(d.getOperatingSystemVersion().trim())
+
+                    shouldSendOsUpdate = (pkgOs != null && deviceOs != null && pkgOs != deviceOs)
+
+                    if (pkgOs != null) {
+                        containsOS = shouldContainOS(pkgOs)
+                        pkgOsVersion = DYoctoOS.fromVersion(pkgOs)
+                    }
+                }
+
+                is Outcome.Error -> {
+                    ProLog.e(
+                        MODULE_NAME,
+                        "Could not find yocto version in ${file.name}. Result: ${ver.error as String}"
+                    )
+                    error = DFirmwareCompatibilityStatus.Error
+                }
+            }
+
+            return@forEach
+        }
+    }
+
+    // ✅ REAL FILTER (inside this function):
+    // If OS update is NOT needed, remove the OS tar from extractionFolder
+    if (error == null && !shouldSendOsUpdate) {
+        val osTar = java.io.File(extractionFolder, DosTarGzFileName)
+        if (osTar.exists()) {
+            val deleted = osTar.delete()
+            ProLog.i(
+                MODULE_NAME,
+                "OS tar filtered out (shouldSendOsUpdate=false). file=${osTar.name}, deleted=$deleted"
+            )
+        }
+    }
+
+    // -------------------------
+    // 2) dAppTar verification (+ keep your existing logic)
+    // -------------------------
+    extractionFolder.listFiles()?.forEach { file ->
+        // (this line is fine, but by itself it doesn't stop future sending)
+        if (file.name == DosTarGzFileName) return@forEach
+
+        if (file.name == dAppTar) {
+            appTarFound = true
+
+            if (pkgOsVersion == DYoctoOS.INVALID) {
+                pkgOsVersion = DYoctoOS.DUNFELL
+            }
+
+            return@forEach
+        }
+    }
+
+    // -------------------------
+    // ✅ ONE FINAL RETURN
+    // -------------------------
+    val result =
+        when {
+            error != null ->
+                Outcome.Error(error!!)
+
+            !appTarFound -> {
+                ProLog.e(MODULE_NAME, "dAppTar not found in extraction folder: $dAppTar")
+                Outcome.Error(DFirmwareCompatibilityStatus.Error)
+            }
+
+            shouldSendOsUpdate ->
+                Outcome.Ok(DFirmwareCompatibilityStatus.OSUpdateIncluded)
+
+            else ->
+                Outcome.Ok(DFirmwareCompatibilityStatus.OSUpdateNotIncluded)
+        }
+
+    return result
+}
