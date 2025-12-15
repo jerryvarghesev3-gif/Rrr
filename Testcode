@@ -1,1 +1,70 @@
 pp
+
+
+
+override suspend fun evaluateFirmwareCompatibility(
+    activeOsVersion: DYoctoOS,
+    releaseManifest: SoftwareReleaseManifest,
+): Outcome<DFirmwareCompatibilityStatus> {
+
+    var containsOS = false
+    var pkgOsVersion = DYoctoOS.INVALID
+    var shouldSendOsUpdate = false
+
+    // 1) OS differential check ONLY for OS file (DosTarGzFileName)
+    extractionFolder.listFiles()?.forEach { file ->
+
+        if (file.name != DosTarGzFileName) return@forEach   // ✅ IMPORTANT FILTER
+
+        when (val ver = DextractYoctoVersion(file)) {
+            is Outcome.Ok -> {
+                val pkgOs: SemVer? = SemVer.fromString(ver.value)
+                val deviceOs: SemVer? = SemVer.fromString(d.getOperatingSystemVersion().trim())
+
+                shouldSendOsUpdate = (pkgOs != null && deviceOs != null && pkgOs != deviceOs)
+
+                if (pkgOs != null) {
+                    containsOS = shouldContainOS(pkgOs)
+                    pkgOsVersion = DYoctoOS.fromVersion(pkgOs)
+                }
+            }
+
+            is Outcome.Error -> {
+                ProLog.e(
+                    MODULE_NAME,
+                    "Could not find yocto version in ${file.name}. Result: ${ver.error}"
+                )
+                return Outcome.Error(DFirmwareCompatibilityStatus.Error)
+            }
+        }
+
+        return@forEach
+    }
+
+    // 2) Verify dAppTar exists
+    var appTarFound = false
+    extractionFolder.listFiles()?.forEach { file ->
+        if (file.name == dAppTar) {
+            appTarFound = true
+            pkgOsVersion = DYoctoOS.DUNFELL
+            return@forEach
+        }
+    }
+
+    // ✅ ONE FINAL RETURN (as you want)
+    val result =
+        when {
+            !appTarFound -> {
+                ProLog.e(MODULE_NAME, "dAppTar not found in extraction folder: $dAppTar")
+                Outcome.Error(DFirmwareCompatibilityStatus.Error)
+            }
+
+            shouldSendOsUpdate ->
+                Outcome.Ok(DFirmwareCompatibilityStatus.OSUpdateIncluded)
+
+            else ->
+                Outcome.Ok(DFirmwareCompatibilityStatus.OSUpdateNotIncluded)
+        }
+
+    return result
+}
