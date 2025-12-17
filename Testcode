@@ -1,1 +1,53 @@
 pp
+
+
+
+private fun load() {
+    launch {
+        kotlin.runCatching {
+
+            if (!connectionBloc.isConnected()) {
+                updateState { state ->
+                    state.copy(loadingStatus = LoadingStatus.Connecting)
+                }
+
+                if (connectionBloc.connect(G_Address._DIAG) is Outcome.Error) {
+                    updateState { state ->
+                        state.copy(loadingStatus = LoadingStatus.Error)
+                    }
+
+                    // ✅ 1) SHOW POPUP FIRST
+                    showWrongProductPopup()
+
+                    // ✅ 2) THEN DISCONNECT
+                    connectionBloc.disconnect()
+
+                    return@launch
+                }
+            }
+
+            deviceBloc.startBoardCollection()
+            loadProperties()
+            deviceBloc.startBedStatusPoll()
+
+        }.onFailure {
+            // ✅ SAME ORDER HERE ALSO
+            showWrongProductPopup()
+            connectionBloc.disconnect()
+        }
+    }
+}
+
+
+
+
+
+private fun showWrongProductPopup() {
+    updateState { state ->
+        state.copy(
+            incompatibleProductDialogVisible = true,
+            incompatibleProductMessage = "Wrong product. Please use the correct application."
+        )
+    }
+}
+
