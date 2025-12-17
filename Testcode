@@ -51,3 +51,55 @@ private fun showWrongProductPopup() {
     }
 }
 
+
+
+
+
+
+
+
+
+
+private fun load() {
+    launch {
+        kotlin.runCatching {
+
+            if (!connectionBloc.isConnected()) {
+                updateState { it.copy(loadingStatus = LoadingStatus.Connecting) }
+
+                if (connectionBloc.connect(G_Address._DIAG) is Outcome.Error) {
+                    updateState { it.copy(loadingStatus = LoadingStatus.Error) }
+                    showWrongProductPopup()
+                    connectionBloc.disconnect()
+                    return@launch
+                }
+            }
+
+            // ✅ MINIMUM: read ONE identifier from device
+            // Replace this line with your real call / value:
+            val productStr: String = deviceBloc.getProductString() // e.g. "CEN" or "DEN"
+
+            val actualDevice = when {
+                productStr.contains("CEN", true) -> MedDevices.CEN
+                productStr.contains("DEN", true) -> MedDevices.DEN
+                else -> null
+            }
+
+            // ✅ Restrict here
+            if (actualDevice == null || actualDevice != currentDevice) {
+                showWrongProductPopup()        // show first
+                connectionBloc.disconnect()    // disconnect after
+                return@launch
+            }
+
+            deviceBloc.startBoardCollection()
+            loadProperties()
+            deviceBloc.startBedStatusPoll()
+
+        }.onFailure {
+            showWrongProductPopup()
+            connectionBloc.disconnect()
+        }
+    }
+}
+
