@@ -1,1 +1,44 @@
 ll
+
+
+
+private fun load() {
+    launch {
+        kotlin.runCatching {
+
+            // 🔒 HARD restriction by app type
+            if (currentDevice != MedDevices.CEN) {
+                updateState {
+                    it.copy(
+                        incompatibleProductDialogVisible = true,
+                        incompatibleProductMessage = "Wrong product. Please use CEN application."
+                    )
+                }
+                return@launch
+            }
+
+            if (!connectionBloc.isConnected()) {
+                updateState { it.copy(loadingStatus = LoadingStatus.Connecting) }
+
+                if (connectionBloc.connect(G_Address._DIAG) is Outcome.Error) {
+                    updateState { it.copy(loadingStatus = LoadingStatus.Error) }
+                    return@launch
+                }
+            }
+
+            // ✅ Allowed only for CEN app
+            deviceBloc.startBoardCollection()
+            loadProperties()
+            deviceBloc.startBedStatusPoll()
+
+        }.onFailure {
+            connectionBloc.disconnect()
+            updateState {
+                it.copy(
+                    incompatibleProductDialogVisible = true,
+                    incompatibleProductMessage = "Unable to connect."
+                )
+            }
+        }
+    }
+}
