@@ -31,3 +31,13 @@ I would welcome the opportunity to further discuss how my experience aligns with
 Kind regards,
 Jerry Varghese
 
+
+
+
+
+
+
+
+Senior Embedded Software Engineer with strong experience in C/C++ systems programming, firmware and driver-level development, middleware, Qt-based applications, and Android platforms. I have worked across multiple domains and layers of the software stack, from low-level embedded systems to application-level solutions. I enjoy solving complex technical problems, building proof-of-concepts, and contributing to reliable, maintainable products. I have also contributed to innovation through patents and technical leadership demonstrations.
+
+
