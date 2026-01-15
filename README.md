@@ -13,3 +13,24 @@ Thank you for your time and consideration.
 Kind regards,
 Jerry Varghese
 
+
+
+
+
+
+
+
+
+
+
+I am currently based in India and fully willing to relocate to Zurich.
+I am available to start from April 2026 and am open to supporting the visa
+and relocation process.
+
+I bring strong experience in embedded C++ and Linux development, working close
+to hardware and collaborating with FPGA and hardware teams.
+I am particularly motivated by Zurich Instruments’ advanced R&D work
+in high-performance measurement systems.
+
+I am actively learning German and plan to complete B2 certification in 2026.
+
