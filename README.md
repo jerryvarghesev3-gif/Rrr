@@ -34,3 +34,45 @@ in high-performance measurement systems.
 
 I am actively learning German and plan to complete B2 certification in 2026.
 
+
+
+
+
+
+
+private fun load() = launch {
+
+    // Step 1: connect (safe)
+    if (!connectionBloc.isConnected()) {
+        updateState { it.copy(loadingStatus = LoadingStatus.Connecting) }
+
+        if (connectionBloc.connect(GN2_Address.SYS_DIAG) is Outcome.Error) {
+            updateState { it.copy(loadingStatus = LoadingStatus.Error) }
+            return@launch
+        }
+    }
+
+    // Step 2: SAFE product check (NO Dynamo calls yet)
+    val detectedDevice = detectDeviceFromModel(state.modelNumber)
+
+    if (detectedDevice != MedDevices.DYNAMO) {
+        updateState {
+            it.copy(
+                loadingStatus = LoadingStatus.Error,
+                incompatibleProductDialogVisible = true,
+                incompatibleProductMessage =
+                    "Invalid product connected. Please connect the correct device."
+            )
+        }
+
+        // Important: STOP HERE
+        connectionBloc.disconnect()
+        return@launch
+    }
+
+    // Step 3: ONLY NOW it is safe to touch Dynamo native code
+    deviceBloc.startBoardCollection()
+    loadProperties()                 // can call Dynamo JNI now
+    deviceBloc.startBedStatusPoll()
+}
+
