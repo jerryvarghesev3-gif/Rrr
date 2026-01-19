@@ -76,3 +76,47 @@ private fun load() = launch {
     deviceBloc.startBedStatusPoll()
 }
 
+
+
+
+
+
+
+
+// connection already successful here
+
+val detected = detectFromUsbOrHandshake() // 🚫 NO JNI here
+
+if (detected != MedDevices.DYNAMO) {
+    updateState {
+        it.copy(
+            loadingStatus = LoadingStatus.Error,
+            incompatibleProductDialogVisible = true,
+            incompatibleProductMessage =
+                "Invalid product connected. Please connect the correct device."
+        )
+    }
+
+    connectionBloc.disconnect()
+    return@launch
+}
+
+
+
+
+
+private fun detectFromUsbOrHandshake(): MedDevices? {
+    // Option 1: USB VID / PID
+    detectDeviceFromUsb(appContext)?.let { return it }
+
+    // Option 2: cached handshake info (string-based only)
+    connectionBloc.lastKnownProduct?.let { return it }
+
+    // Option 3: unknown → allow flow to continue
+    return null
+}
+
+
+
+
+
