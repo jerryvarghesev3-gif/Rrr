@@ -139,3 +139,180 @@ private fun readTypeId(parser: XmlPullParser): String {
     parser.require(XmlPullParser.END_TAG, ns, "TypeId")
     return typeId
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+override suspend fun evaluateFirmwareCompatibility(
+    firmwareFileName: String,
+    firmwareFileInputStream: InputStream,
+    somVersion: SemVer,
+    isBasicMode: Boolean,
+    boardsToUpdate: List<DynamoBoard>?
+) {
+    update { state ->
+        state.copy(firmwareCompatibilityStatus = DynamoFirmwareCompatibilityStatus.Evaluating)
+    }
+
+    try {
+        val releaseManifestOutcome =
+            dynamoFirmwareService.extractFirmwareFile(firmwareFileInputStream)
+
+        if (releaseManifestOutcome !is Outcome.Ok) {
+            ProLog.e(MODULE_NAME, msg = "Error unzipping bas file.")
+            update { state ->
+                state.copy(firmwareCompatibilityStatus = DynamoFirmwareCompatibilityStatus.Error)
+            }
+            return
+        }
+
+        update { state ->
+            state.copy(releaseManifest = releaseManifestOutcome.value)
+        }
+
+        // KEEP YOUR OLD NOT_CONFIGURED FLOW EXACTLY
+        if (bedStatusBloc.state.boardStatuses[DynamoBoard.SYSTEM_ON_MODULE]!!.connectStatus ==
+            BoardConnectStatus.NOT_CONFIGURED
+        ) {
+            if (isBasicMode) {
+                updateFirmware()
+            } else {
+                updateFirmware(boardsToUpdate)
+            }
+
+            update { state ->
+                state.copy(firmwareCompatibilityStatus = DynamoFirmwareCompatibilityStatus.Unchecked)
+            }
+            return
+        }
+
+        // Service evaluate (1st compatibility) - now returns Included / NotIncluded
+        val result = dynamoFirmwareService.evaluateFirmwareCompatibility(
+            bedStatusBloc.getSomOs(),
+            releaseManifestOutcome.value
+        )
+
+        if (result is Outcome.Ok) {
+
+            // =========================================================
+            // ✅ BASIC MODE (MINIMAL FIX)
+            // - keep your network check + transfer logic
+            // - but ALWAYS trigger chooser popup using Unchecked
+            // - store result in pendingCompatibilityResult
+            // =========================================================
+            if (isBasicMode) {
+
+                // store the service result for later use (USB path)
+                // (chooser actions can check this)
+                update { state ->
+                    state.copy(
+                        pendingCompatibilityResult = result.value
+                    )
+                }
+
+                val isNetworkSame = dynamoWifiService.isBedConnectedToPhoneNetwork()
+
+                // KEEP your old auto-transfer behavior ONLY when OS is included
+                if (result.value == DynamoFirmwareCompatibilityStatus.OSUpdateIncluded &&
+                    isNetworkSame is Outcome.Ok
+                ) {
+                    transferFirmwareFiles()
+                } else if (result.value == DynamoFirmwareCompatibilityStatus.OSUpdateIncluded) {
+                    // keep your old "wifi not same" status
+                    update { state ->
+                        state.copy(
+                            firmwareCompatibilityStatus =
+                                DynamoFirmwareCompatibilityStatus.OSUpdateIncludedNoInternet
+                        )
+                    }
+                }
+
+                // ✅ NEW REQUIREMENT:
+                // ALWAYS show chooser popup after this (USB/Wi-Fi)
+                update { state ->
+                    state.copy(
+                        firmwareCompatibilityStatus = DynamoFirmwareCompatibilityStatus.Unchecked
+                    )
+                }
+                return
+            }
+
+            // =========================================================
+            // ADVANCED MODE: KEEP YOUR OLD CODE EXACTLY
+            // =========================================================
+            val isNetworkSame = dynamoWifiService.isBedConnectedToPhoneNetwork()
+
+            if (result.value == DynamoFirmwareCompatibilityStatus.OSUpdateIncluded &&
+                isNetworkSame is Outcome.Ok
+            ) {
+                transferFirmwareFiles()
+            } else if (result.value == DynamoFirmwareCompatibilityStatus.OSUpdateIncluded) {
+                update { state ->
+                    state.copy(
+                        firmwareCompatibilityStatus =
+                            DynamoFirmwareCompatibilityStatus.OSUpdateIncludedNoInternet
+                    )
+                }
+            } else {
+                if (result.value == DynamoFirmwareCompatibilityStatus.OSUpdateNotIncluded) {
+                    update { state ->
+                        state.copy(
+                            firmwareCompatibilityStatus = DynamoFirmwareCompatibilityStatus.Unchecked
+                        )
+                    }
+                    updateFirmware(boardsToUpdate)
+                } else if (
+                    result.value == DynamoFirmwareCompatibilityStatus.OSUpdateRequired ||
+                    result.value == DynamoFirmwareCompatibilityStatus.UpdateIncompatible
+                ) {
+                    update { state ->
+                        state.copy(firmwareCompatibilityStatus = result.value)
+                    }
+                } else if (result.value == DynamoFirmwareCompatibilityStatus.OSUpdateIncluded) {
+                    if (bedStatusBloc.getSomOs() == DynamoYoctoOS.DUNFELL) {
+                        update { state ->
+                            state.copy(
+                                firmwareCompatibilityStatus =
+                                    DynamoFirmwareCompatibilityStatus.UpdateIncompatible
+                            )
+                        }
+                    } else {
+                        ProLog.e(
+                            MODULE_NAME,
+                            msg = "SOM version = ${bedStatusBloc.getSomOs()}. Bas file includes OS. Cannot push updateState."
+                        )
+                        update { state ->
+                            state.copy(firmwareCompatibilityStatus = DynamoFirmwareCompatibilityStatus.Error)
+                        }
+                    }
+                }
+            }
+
+        } else if (result is Outcome.Error) {
+            ProLog.w(MODULE_NAME, msg = "Firmware Compatibility failed.")
+            update { state ->
+                state.copy(firmwareCompatibilityStatus = result.error as DynamoFirmwareCompatibilityStatus)
+            }
+        }
+
+    } catch (e: Exception) {
+        ProLog.e(MODULE_NAME, msg = "Firmware Compatibility exception = ${e} msg = ${e.message}")
+        update { state ->
+            state.copy(firmwareCompatibilityStatus = DynamoFirmwareCompatibilityStatus.Error)
+        }
+    }
+}
