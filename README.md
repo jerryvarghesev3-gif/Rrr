@@ -1,122 +1,108 @@
-Dear Hiring Team,
-
-I am a Senior Embedded / C++ Software Engineer with 7.5+ years of experience working on performance-critical systems using modern C++ (C++14/17), Embedded Linux, Yocto, BSP and low-level system integration.
-
-I have worked across the full product lifecycle, from low-level firmware and device interaction up to system integration, testing and deployment, particularly in complex embedded and IoT environments.
-
-I am highly motivated to relocate to Switzerland and am open to employer-sponsored work permits. I am currently learning German and plan to reach B2 level, while being fully fluent in English for professional communication.
-
-I believe my system-level mindset, strong C++ background and experience with real-world embedded products align well with PXL Vision’s work in high-quality imaging and vision systems.
-
-Thank you for your time and consideration.
-
-Kind regards,
-Jerry Varghese
-
-
-
-
-
-
-
-
-
-
-
-I am currently based in India and fully willing to relocate to Zurich.
-I am available to start from April 2026 and am open to supporting the visa
-and relocation process.
-
-I bring strong experience in embedded C++ and Linux development, working close
-to hardware and collaborating with FPGA and hardware teams.
-I am particularly motivated by Zurich Instruments’ advanced R&D work
-in high-performance measurement systems.
-
-I am actively learning German and plan to complete B2 certification in 2026.
-
-
-
-
-
-
-
-private fun load() = launch {
-
-    // Step 1: connect (safe)
-    if (!connectionBloc.isConnected()) {
-        updateState { it.copy(loadingStatus = LoadingStatus.Connecting) }
-
-        if (connectionBloc.connect(GN2_Address.SYS_DIAG) is Outcome.Error) {
-            updateState { it.copy(loadingStatus = LoadingStatus.Error) }
-            return@launch
-        }
+override suspend fun evaluateFirmwareCompatibility(
+    firmwareFileName: String,
+    firmwareFileInputStream: InputStream,
+    somVersion: SemVer,
+    isBasicMode: Boolean,
+    boardsToUpdate: List<DynamoBoard>?
+) {
+    update { state ->
+        state.copy(firmwareCompatibilityStatus = DynamoFirmwareCompatibilityStatus.Evaluating)
     }
 
-    // Step 2: SAFE product check (NO Dynamo calls yet)
-    val detectedDevice = detectDeviceFromModel(state.modelNumber)
+    try {
+        val releaseManifestOutcome =
+            dynamoFirmwareService.extractFirmwareFile(firmwareFileInputStream)
 
-    if (detectedDevice != MedDevices.DYNAMO) {
-        updateState {
-            it.copy(
-                loadingStatus = LoadingStatus.Error,
-                incompatibleProductDialogVisible = true,
-                incompatibleProductMessage =
-                    "Invalid product connected. Please connect the correct device."
-            )
+        if (releaseManifestOutcome !is Outcome.Ok) {
+            ProLog.e(MODULE_NAME, "Error unzipping bas file.")
+            update { state ->
+                state.copy(firmwareCompatibilityStatus = DynamoFirmwareCompatibilityStatus.Error)
+            }
+            return
         }
 
-        // Important: STOP HERE
-        connectionBloc.disconnect()
-        return@launch
-    }
+        update { state ->
+            state.copy(releaseManifest = releaseManifestOutcome.value)
+        }
 
-    // Step 3: ONLY NOW it is safe to touch Dynamo native code
-    deviceBloc.startBoardCollection()
-    loadProperties()                 // can call Dynamo JNI now
-    deviceBloc.startBedStatusPoll()
-}
+        // ---------------------------
+        // KEEP YOUR OLD NOT_CONFIGURED
+        // ---------------------------
+        if (bedStatusBloc.state.boardStatuses[DynamoBoard.SYSTEM_ON_MODULE]!!.connectStatus ==
+            BoardConnectStatus.NOT_CONFIGURED
+        ) {
+            if (isBasicMode) {
+                // ✅ NEW REQUIREMENT: in BASIC don’t auto update, show popup always
+                update { state ->
+                    state.copy(
+                        firmwareCompatibilityStatus = DynamoFirmwareCompatibilityStatus.Unchecked,
+                        pendingCompatibilityResult = DynamoFirmwareCompatibilityStatus.OSUpdateNotIncluded
+                    )
+                }
+                return
+            } else {
+                // ✅ Advanced unchanged
+                updateFirmware(boardsToUpdate)
+                return
+            }
+        }
 
-
-
-
-
-
-
-
-// connection already successful here
-
-val detected = detectFromUsbOrHandshake() // 🚫 NO JNI here
-
-if (detected != MedDevices.DYNAMO) {
-    updateState {
-        it.copy(
-            loadingStatus = LoadingStatus.Error,
-            incompatibleProductDialogVisible = true,
-            incompatibleProductMessage =
-                "Invalid product connected. Please connect the correct device."
+        val result = dynamoFirmwareService.evaluateFirmwareCompatibility(
+            bedStatusBloc.getSomOs(),
+            releaseManifestOutcome.value
         )
+
+        if (result is Outcome.Ok) {
+
+            // ---------------------------
+            // ADVANCED MODE = unchanged
+            // ---------------------------
+            if (!isBasicMode) {
+                update { state -> state.copy(firmwareCompatibilityStatus = result.value) }
+                updateFirmware(boardsToUpdate)
+                return
+            }
+
+            // ---------------------------
+            // BASIC MODE (KEEP YOUR OLD LOGIC)
+            // ---------------------------
+
+            // Keep your old behavior: update state to result.value first
+            update { state -> state.copy(firmwareCompatibilityStatus = result.value) }
+
+            // Keep your old network + transfer logic exactly
+            val isNetworkSame = dynamoWifiService.isBedConnectedToPhoneNetwork()
+            if (result.value == DynamoFirmwareCompatibilityStatus.OSUpdateIncluded && isNetworkSame is Outcome.Ok) {
+                transferFirmwareFiles()
+            } else if (result.value == DynamoFirmwareCompatibilityStatus.OSUpdateIncluded) {
+                update {
+                    it.copy(firmwareCompatibilityStatus = DynamoFirmwareCompatibilityStatus.OSUpdateIncludedNoInternet)
+                }
+            }
+
+            // ✅ NEW REQUIREMENT (ONLY ADDITION):
+            // Always show popup afterwards (for BOTH cases: OS included OR not included)
+            update { state ->
+                state.copy(
+                    firmwareCompatibilityStatus = DynamoFirmwareCompatibilityStatus.Unchecked, // popup trigger
+                    pendingCompatibilityResult = result.value // store OSIncluded/NotIncluded for popup
+                )
+            }
+            return
+        }
+
+        if (result is Outcome.Error) {
+            ProLog.w(MODULE_NAME, "Firmware Compatibility failed.")
+            update { state ->
+                state.copy(firmwareCompatibilityStatus = result.error as DynamoFirmwareCompatibilityStatus)
+            }
+            return
+        }
+
+    } catch (e: Exception) {
+        ProLog.e(MODULE_NAME, "Firmware Compatibility exception = $e msg = ${e.message}")
+        update { state ->
+            state.copy(firmwareCompatibilityStatus = DynamoFirmwareCompatibilityStatus.Error)
+        }
     }
-
-    connectionBloc.disconnect()
-    return@launch
 }
-
-
-
-
-
-private fun detectFromUsbOrHandshake(): MedDevices? {
-    // Option 1: USB VID / PID
-    detectDeviceFromUsb(appContext)?.let { return it }
-
-    // Option 2: cached handshake info (string-based only)
-    connectionBloc.lastKnownProduct?.let { return it }
-
-    // Option 3: unknown → allow flow to continue
-    return null
-}
-
-
-
-
-
