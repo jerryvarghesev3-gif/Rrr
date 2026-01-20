@@ -106,3 +106,36 @@ override suspend fun evaluateFirmwareCompatibility(
         }
     }
 }
+
+
+
+
+
+
+
+
+
+
+@Throws(IOException::class, XmlPullParserException::class)
+private fun readVersionString(parser: XmlPullParser): String {
+    parser.require(XmlPullParser.START_TAG, ns, "Version")
+    val version = readText(parser).trim()
+    parser.require(XmlPullParser.END_TAG, ns, "Version")
+    return version
+}
+
+@Throws(IOException::class, XmlPullParserException::class)
+private fun readKind(parser: XmlPullParser): String {
+    parser.require(XmlPullParser.START_TAG, ns, "Kind")
+    val kind = readText(parser).trim()
+    parser.require(XmlPullParser.END_TAG, ns, "Kind")
+    return kind
+}
+
+@Throws(IOException::class, XmlPullParserException::class)
+private fun readTypeId(parser: XmlPullParser): String {
+    parser.require(XmlPullParser.START_TAG, ns, "TypeId")
+    val typeId = readText(parser).trim()
+    parser.require(XmlPullParser.END_TAG, ns, "TypeId")
+    return typeId
+}
