@@ -78,3 +78,42 @@ if (result is Outcome.Error) {
     }
     return
 }
+
+
+
+
+
+
+
+
+
+
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalViewModelStoreOwner
+import androidx.lifecycle.viewmodel.compose.viewModel
+
+override val disconnectNotice: @Composable () -> Unit = {
+    // 1) Get owner
+    val owner = LocalViewModelStoreOwner.current ?: return@disconnectNotice
+
+    // 2) Create VM using the owner (NO "it")
+    val vm: CentrellaHomeScreenViewModel = viewModel(
+        viewModelStoreOwner = owner,
+        factory = CentrellaHomeViewModelFactory(
+            firmwareNav = { nc.navigate(firmware.getRoute()) },
+            errorLogsNav = { nc.navigate(errorLogs.getRoute()) },
+            previousNav = { nc.popBackStack() },
+            errorBloc = errorBloc,
+            deviceBloc = deviceBloc,
+            connectionBloc = connectionBloc,
+            appContext = LocalContext.current.applicationContext
+        )
+    )
+
+    // 3) Pass uiState (REQUIRED)
+    CentrellaDisconnectModal(
+        uiState = vm.uiState.collectAsState(),
+        popBackToHomeNav = { nc.popBackStack(home.getRoute(), inclusive = true) }
+    )
+}
