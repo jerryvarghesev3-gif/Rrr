@@ -200,3 +200,83 @@ override suspend fun evaluateFirmwareCompatibility(
         Outcome.Ok(DynamoFirmwareCompatibilityStatus.OSUpdateNotIncluded)
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+override suspend fun evaluateFirmwareCompatibility(
+    activeOsVersion: DynamoYoctoOS,
+    releaseManifest: SoftwareReleaseManifest,
+): Outcome<DynamoFirmwareCompatibilityStatus> {
+
+    val files = extractionFolder.listFiles().orEmpty()
+
+    ProLog.i(
+        MODULE_NAME,
+        "Evaluating firmware compatibility. " +
+            "activeOsVersion=$activeOsVersion, extractedFiles=${files.map { it.name }}"
+    )
+
+    //OS file can be either tar.gz OR tar.gz.enc
+    val containsOsTar = files.any {
+        it.name.equals("firmware_imx6_dynamo.tar.gz", ignoreCase = true) ||
+        it.name.equals("firmware_imx6_dynamo.tar.gz.enc", ignoreCase = true)
+    }
+
+    ProLog.i(
+        MODULE_NAME,
+        "OS package presence check: containsOsTar=$containsOsTar"
+    )
+
+    if (!containsOsTar) {
+        ProLog.i(
+            MODULE_NAME,
+            "OS update NOT included → No OS tar(.gz/.enc) found"
+        )
+        return Outcome.Ok(DynamoFirmwareCompatibilityStatus.OSUpdateNotIncluded)
+    }
+
+    //Decide
+    val manifestDecision = shouldSendOsFromManifest(releaseManifest)
+
+    ProLog.i(
+        MODULE_NAME,
+        "Manifest decision: shouldSendOsFromManifest=$manifestDecision"
+    )
+
+    val shouldSendOsUpdate =
+        (activeOsVersion == DynamoYoctoOS.DUNFELL) && manifestDecision
+
+    ProLog.i(
+        MODULE_NAME,
+        "Final OS decision inputs: " +
+            "activeOsIsDunfell=${activeOsVersion == DynamoYoctoOS.DUNFELL}, " +
+            "shouldSendOsUpdate=$shouldSendOsUpdate"
+    )
+
+    return if (shouldSendOsUpdate) {
+        ProLog.i(
+            MODULE_NAME,
+            "OSUpdateIncluded → OS will be sent"
+        )
+        Outcome.Ok(DynamoFirmwareCompatibilityStatus.OSUpdateIncluded)
+    } else {
+        ProLog.i(
+            MODULE_NAME,
+            "OSUpdateNotIncluded → OS will NOT be sent"
+        )
+        Outcome.Ok(DynamoFirmwareCompatibilityStatus.OSUpdateNotIncluded)
+    }
+}
