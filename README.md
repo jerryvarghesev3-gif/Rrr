@@ -86,3 +86,51 @@ override suspend fun evaluateFirmwareCompatibility(
         Outcome.Ok(DynamoFirmwareCompatibilityStatus.OSUpdateNotIncluded)
     }
 }
+
+
+
+
+
+override suspend fun evaluateFirmwareCompatibility(
+    activeOsVersion: DynamoYoctoOS,
+    releaseManifest: SoftwareReleaseManifest,
+): Outcome<DynamoFirmwareCompatibilityStatus> {
+
+    val files = extractionFolder.listFiles().orEmpty()
+    val fileNames = files.map { it.name }
+
+    ProLog.i(
+        MODULE_NAME,
+        msg = "Evaluating fw compatibility: activeOsVersion=$activeOsVersion, extractedFiles=$fileNames"
+    )
+
+    // OS file can be either tar.gz OR tar.gz.enc
+    val containsOsTar = files.any {
+        it.name.equals("firmware_imx6_dynamo.tar.gz", ignoreCase = true) ||
+        it.name.equals("firmware_imx6_dynamo.tar.gz.enc", ignoreCase = true)
+    }
+
+    ProLog.i(MODULE_NAME, msg = "OS presence: containsOsTar=$containsOsTar")
+
+    if (!containsOsTar) {
+        ProLog.i(MODULE_NAME, msg = "OS not included -> OSUpdateNotIncluded")
+        return Outcome.Ok(DynamoFirmwareCompatibilityStatus.OSUpdateNotIncluded)
+    }
+
+    val manifestDecision = shouldSendOsFromManifest(releaseManifest)
+    ProLog.i(MODULE_NAME, msg = "Manifest decision (shouldSendOsFromManifest)=$manifestDecision")
+
+    val activeIsDunfell = (activeOsVersion == DynamoYoctoOS.DUNFELL)
+    ProLog.i(MODULE_NAME, msg = "activeOsIsDunfell=$activeIsDunfell")
+
+    val shouldSendOsUpdate = activeIsDunfell && manifestDecision
+    ProLog.i(MODULE_NAME, msg = "Final shouldSendOsUpdate=$shouldSendOsUpdate")
+
+    return if (shouldSendOsUpdate) {
+        ProLog.i(MODULE_NAME, msg = "OSUpdateIncluded -> OS WILL be sent")
+        Outcome.Ok(DynamoFirmwareCompatibilityStatus.OSUpdateIncluded)
+    } else {
+        ProLog.i(MODULE_NAME, msg = "OSUpdateNotIncluded -> OS will NOT be sent")
+        Outcome.Ok(DynamoFirmwareCompatibilityStatus.OSUpdateNotIncluded)
+    }
+}
