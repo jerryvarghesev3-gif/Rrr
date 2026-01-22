@@ -21,3 +21,22 @@ enum class DynamoYoctoOS(val yoctoPrjVer: DSemVer) {
         }
     }
 }
+
+
+
+
+
+
+val somFwSemVer = state.boardStatuses[DynamoBoard.SYSTEM_ON_MODULE]?.firmwareVersion
+
+val somFwDVer = somFwSemVer
+    ?.let { DSemVer.fromString(it.toString()) }
+    ?: DSemVer()   // 0.0.0.0 fallback
+
+fwBloc.evaluateFirmwareCompatibility(
+    firmwareFileName = selectedFile.name ?: "",
+    firmwareFileInputStream = inputStream,
+    somVersion = somFwDVer,
+    isBasicMode = isBasic,
+    boardsToUpdate = if (isBasic) null else state.advancedBoardList
+)
