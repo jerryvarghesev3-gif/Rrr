@@ -307,3 +307,62 @@ void Firmware::updateBoard(quint32 destination, MEM_MEMORY_TYPE memoryType, QStr
     currentMemoryType = memoryType;
     fw->startUpdate(memoryType, toggleBankOnCurrentBoard);
 }
+
+
+
+
+
+
+
+
+
+
+
+
+QRegularExpression decryptRx("^decrypt(\\..+)?$");
+int32_t indexOfDecrypt = binariesFound.indexOf(decryptRx);
+
+if (indexOfDecrypt > -1)
+{
+    QString decryptFileName = binariesFound.at(indexOfDecrypt);
+
+    // Build full path for decrypt (same folder as tar)
+    QString decryptPath = binPathBase;        // whatever your folder base is
+    decryptPath.append("/");
+    decryptPath.append(decryptFileName);
+
+    ProLog().i(MODULE_NAME, "Downloading " + decryptFileName.toStdString() + " to SOM");
+
+    // 1) Tell SOM which file is coming (same request type)
+    MEM_SendImageFileNameRequest req = MEM_SendImageFileNameRequest_init_zero;
+    MEM_SendImageFileNameResponse rsp = MEM_SendImageFileNameResponse_init_zero;
+    req.memoryType = memoryType;
+
+    // IMPORTANT: imageName is the remote filename to create on SOM
+    memset(req.imageName, 0, sizeof(req.imageName));
+    memcpy(req.imageName,
+           decryptFileName.toStdString().c_str(),
+           std::min((size_t)sizeof(req.imageName) - 1,
+                    decryptFileName.toStdString().size()));
+
+    if (CMD_OK != MEM_SendImageFileName(GN2A_SOM, &req, &rsp))
+    {
+        ProLog().w(MODULE_NAME, "Could not send decrypt file info to SOM");
+        onBoardUpgraded(fw, destination, false);
+        return;
+    }
+
+    // 2) Upload decrypt file bytes (same uploader object)
+    FirmwareUpdateCAN* fwDecrypt = new FirmwareUpdateCAN();
+    fwDecrypt->setImageData(decryptPath);                 // <-- local path to decrypt
+    fwDecrypt->onChangedSelectedServer(addressForUpdate, serverBoard, NULL);
+    fwDecrypt->setDestination(destination);
+
+    // (Reuse same signals if you want, or block until done depending on your architecture)
+    // If your update is synchronous chain, call the function that starts upload here:
+    fwDecrypt->startUpdate(memoryType, /*toggle*/ false);
+}
+else
+{
+    ProLog().i(MODULE_NAME, "decrypt not present - skipping");
+}
