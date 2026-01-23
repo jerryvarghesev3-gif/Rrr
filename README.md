@@ -366,3 +366,62 @@ else
 {
     ProLog().i(MODULE_NAME, "decrypt not present - skipping");
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+QString baseDir = binPath;   // IMPORTANT: keep folder path BEFORE appending tar name
+
+// find som tar filename from binariesFound
+QString somFileName = binariesFound.at(indexOfTarBinary);
+
+// build full path to tar
+QString somTarPath = baseDir + "/" + somFileName;
+
+// send tar (existing)
+fw->setImageData(somTarPath);
+// startUpdate...
+
+// find decrypt
+QRegularExpression decryptRx("^decrypt(\\..+)?$");
+int indexOfDecrypt = binariesFound.indexOf(decryptRx);
+
+if (indexOfDecrypt > -1) {
+    QString decryptFileName = binariesFound.at(indexOfDecrypt);
+
+    // ✅ build correct full path (NOT under tar name)
+    QString decryptPath = baseDir + "/" + decryptFileName;
+
+    if (!QFileInfo(decryptPath).isReadable()) {
+        ProLog().w(MODULE_NAME, (decryptPath + " is unreadable").toStdString());
+    } else {
+        ProLog().i(MODULE_NAME, ("Downloading " + decryptFileName + " to SOM").toStdString());
+
+        FirmwareUpdateCAN* fwDecrypt = new FirmwareUpdateCAN();
+        fwDecrypt->setImageData(decryptPath);
+        fwDecrypt->onChangedSelectedServer(addressForUpdate, serverBoard, NULL);
+        fwDecrypt->setDestination(destination);
+
+        // IMPORTANT: decrypt should NOT toggle
+        fwDecrypt->startUpdate(memoryType, false);
+    }
+}
