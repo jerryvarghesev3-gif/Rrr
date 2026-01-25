@@ -1,1 +1,211 @@
+void Firmware::updateBoard(quint32 destination, MEM_MEMORY_TYPE memoryType, QString binPath)
+{
+    updateComplete[destination] = false;
+    updateSuccessful[destination] = false;
 
+    QString board = boardsList[destination];
+    GN2_Address addressForUpdate = GN2A_MCB;
+    QString serverBoard;
+    RPCA_Plant* rp = RPCA_Plant::getInstance();
+
+    if ((!rp->isConnectedTo(GN2A_MCB)) && (destination == GN2A_ATLAS))
+    {
+        addressForUpdate = GN2A_ATLAS;
+    }
+
+    serverBoard = boardsList[addressForUpdate];
+
+    ProLog().i(MODULE_NAME, ("Firmware upgrade started on " + board).toStdString());
+
+    QString somFileName = "N/A";
+    bool toggleBankOnCurrentBoard = true; // keep your original behavior (if you had it)
+
+    // IMPORTANT: Keep a stable folder path (binPath gets mutated later for SOM tar)
+    const QString baseDir = binPath;
+
+    // ------------------------------------------------------------
+    // INTERNAL FLASH
+    // ------------------------------------------------------------
+    if (MEM_MEMORY_TYPE_INTERNAL_FLASH == memoryType)
+    {
+        // ---------------- SOM special case (only change here) ----------------
+        if (GN2A_SOM == destination)
+        {
+            // Find SOM tar in the folder (binariesFound must contain filenames, not full paths)
+            QRegularExpression tarRx("^dynamoSOMApp.*\\.tar\\.gz\\.enc$");
+            int indexOfTarBinary = binariesFound.indexOf(tarRx);
+
+            if (indexOfTarBinary > -1)
+            {
+                somFileName = binariesFound.at(indexOfTarBinary);
+
+                // EXISTING behavior: binPath becomes the tar file path
+                binPath.append("/");
+                binPath.append(somFileName);
+            }
+            else
+            {
+                ProLog().w(MODULE_NAME, ("SOM tar not found in folder: " + baseDir).toStdString());
+                onBoardUpgraded(nullptr, destination, false);
+                return;
+            }
+
+            // ✅ NEW (minimal): locate decrypt filename but DO NOT append to binPath
+            QRegularExpression decryptRx("^decrypt(\\..+)?$");
+            int indexOfDecrypt = binariesFound.indexOf(decryptRx);
+
+            QString decryptFileName;
+            QString decryptPath;
+            if (indexOfDecrypt > -1)
+            {
+                decryptFileName = binariesFound.at(indexOfDecrypt);
+                decryptPath = baseDir + "/" + decryptFileName;   // ✅ correct path: folder/decrypt
+            }
+
+            // Create fw for SOM tar (existing logic)
+            ProLog().i(MODULE_NAME, ("Image path: " + binPath).toStdString());
+
+            FirmwareUpdateCAN* fw = new FirmwareUpdateCAN();
+            fw->setImageData(binPath);
+            fw->onChangedSelectedServer(addressForUpdate, serverBoard, NULL);
+            fw->setDestination(destination);
+
+            // Send SOM image file name to SOM
+            MEM_SendImageFileNameRequest req = MEM_SendImageFileNameRequest_init_zero;
+            MEM_SendImageFileNameResponse rsp = MEM_SendImageFileNameResponse_init_zero;
+            req.memoryType = memoryType;
+
+            {
+                QByteArray nameBytes = somFileName.toUtf8();
+                memset(req.imageName, 0, sizeof(req.imageName));
+                strncpy(req.imageName, nameBytes.constData(), sizeof(req.imageName) - 1);
+            }
+
+            ProLog().i(MODULE_NAME, ("Downloading " + somFileName + " to SOM").toStdString());
+
+            if (CMD_OK != MEM_SendImageFileName(GN2A_SOM, &req, &rsp))
+            {
+                ProLog().w(MODULE_NAME, "Could not send SOM tar file info");
+                onBoardUpgraded(fw, destination, false);
+                return;
+            }
+
+            // ✅ NEW (minimal): after tar upload completes, upload decrypt (if present)
+            if (!decryptFileName.isEmpty())
+            {
+                connect(fw, &FirmwareUpdateCAN::imageUploadCompleted, this,
+                        [=](auto /*...args*/) {
+                            ProLog().i(MODULE_NAME, ("Downloading " + decryptFileName + " to SOM").toStdString());
+
+                            FirmwareUpdateCAN* fw2 = new FirmwareUpdateCAN();
+                            fw2->setImageData(decryptPath); // ✅ FIX: use baseDir/decrypt (NOT tarPath/decrypt)
+                            fw2->onChangedSelectedServer(addressForUpdate, serverBoard, NULL);
+                            fw2->setDestination(destination);
+
+                            MEM_SendImageFileNameRequest req2 = MEM_SendImageFileNameRequest_init_zero;
+                            MEM_SendImageFileNameResponse rsp2 = MEM_SendImageFileNameResponse_init_zero;
+                            req2.memoryType = memoryType;
+
+                            QByteArray decBytes = decryptFileName.toUtf8();
+                            memset(req2.imageName, 0, sizeof(req2.imageName));
+                            strncpy(req2.imageName, decBytes.constData(), sizeof(req2.imageName) - 1);
+
+                            if (CMD_OK != MEM_SendImageFileName(GN2A_SOM, &req2, &rsp2))
+                            {
+                                ProLog().w(MODULE_NAME, "Could not send decrypt file info");
+                                onBoardUpgraded(fw2, destination, false);
+                                return;
+                            }
+
+                            // Hook fw2 signals same as fw
+                            connect(fw2, &FirmwareUpdateCAN::imageUploadCompleted, this, &Firmware::onBoardUpgraded);
+                            connect(fw2, &FirmwareUpdateCAN::errorNotification, this, &Firmware::onObservedError);
+                            connect(fw2, &FirmwareUpdateCAN::infoNotification, this, &Firmware::onObservedInfo);
+                            connect(fw2, &FirmwareUpdateCAN::progressObserved, this, &Firmware::onObservedProgress);
+                            connect(fw2, &FirmwareUpdateCAN::newProgressPhaseStarted, this, &Firmware::onPhaseChanged);
+                            connect(this, &Firmware::abortUpgrade, fw2, &FirmwareUpdateCAN::abortUpgrade, Qt::DirectConnection);
+
+                            currentMemoryType = memoryType;
+                            fw2->startUpdate(memoryType, false);
+                        },
+                        Qt::QueuedConnection);
+            }
+
+            // ✅ FIX: this was your compile error area
+            // errorNotification does NOT match onBoardUpgraded signature -> connect to onObservedError
+            connect(fw, &FirmwareUpdateCAN::imageUploadCompleted, this, &Firmware::onBoardUpgraded);
+            connect(fw, &FirmwareUpdateCAN::errorNotification, this, &Firmware::onObservedError);
+            connect(fw, &FirmwareUpdateCAN::infoNotification, this, &Firmware::onObservedInfo);
+            connect(fw, &FirmwareUpdateCAN::progressObserved, this, &Firmware::onObservedProgress);
+            connect(fw, &FirmwareUpdateCAN::newProgressPhaseStarted, this, &Firmware::onPhaseChanged);
+            connect(this, &Firmware::abortUpgrade, fw, &FirmwareUpdateCAN::abortUpgrade, Qt::DirectConnection);
+
+            currentMemoryType = memoryType;
+            fw->startUpdate(memoryType, false);
+            return;
+        }
+
+        // ---------------- Existing code for OTHER internal-flash boards ----------------
+        binPath.append("/");
+        binPath.append(internalBinaries[destination]);   // keep your existing mapping
+        toggleBankOnCurrentBoard = false;                // keep your existing behavior
+    }
+    // ------------------------------------------------------------
+    // EXTERNAL FLASH
+    // ------------------------------------------------------------
+    else if (MEM_MEMORY_TYPE_EXTERNAL_FLASH0 == memoryType)
+    {
+        toggleBankOnCurrentBoard = false;
+        binPath.append("/");
+        binPath.append(externalImages[destination]);     // keep your existing mapping
+    }
+
+    // ------------------------------------------------------------
+    // Existing common flow (unchanged)
+    // ------------------------------------------------------------
+    ProLog().i(MODULE_NAME, ("Image path: " + binPath).toStdString());
+
+    FirmwareUpdateCAN* fw = new FirmwareUpdateCAN();
+    fw->setImageData(binPath);
+    fw->onChangedSelectedServer(addressForUpdate, serverBoard, NULL);
+    fw->setDestination(destination);
+
+    if (GN2A_SOM == destination)
+    {
+        MEM_SendImageFileNameRequest req = MEM_SendImageFileNameRequest_init_zero;
+        MEM_SendImageFileNameResponse rsp = MEM_SendImageFileNameResponse_init_zero;
+        req.memoryType = memoryType;
+
+        QByteArray nameBytes = somFileName.toUtf8();
+        memset(req.imageName, 0, sizeof(req.imageName));
+        strncpy(req.imageName, nameBytes.constData(), sizeof(req.imageName) - 1);
+
+        ProLog().i(MODULE_NAME, ("Downloading " + std::string(req.imageName) + " to SOM").toStdString());
+
+        if (CMD_OK != MEM_SendImageFileName(GN2A_SOM, &req, &rsp))
+        {
+            ProLog().w(MODULE_NAME, ("Could not send file info to " + board).toStdString());
+            onBoardUpgraded(fw, destination, false);
+            return;
+        }
+    }
+    else
+    {
+        if (!fw->validateImage(memoryType, false)) // do not check board version
+        {
+            ProLog().w(MODULE_NAME, ("Image Verification failed on " + board).toStdString());
+            onBoardUpgraded(fw, destination, false);
+            return;
+        }
+    }
+
+    connect(fw, &FirmwareUpdateCAN::imageUploadCompleted, this, &Firmware::onBoardUpgraded);
+    connect(fw, &FirmwareUpdateCAN::errorNotification, this, &Firmware::onObservedError); // ✅ FIXED
+    connect(fw, &FirmwareUpdateCAN::infoNotification, this, &Firmware::onObservedInfo);
+    connect(fw, &FirmwareUpdateCAN::progressObserved, this, &Firmware::onObservedProgress);
+    connect(fw, &FirmwareUpdateCAN::newProgressPhaseStarted, this, &Firmware::onPhaseChanged);
+    connect(this, &Firmware::abortUpgrade, fw, &FirmwareUpdateCAN::abortUpgrade, Qt::DirectConnection);
+
+    currentMemoryType = memoryType;
+    fw->startUpdate(memoryType, toggleBankOnCurrentBoard);
+}
