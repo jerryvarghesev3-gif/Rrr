@@ -228,3 +228,21 @@ void Firmware::updateBoard(quint32 destination, MEM_MEMORY_TYPE memoryType, QStr
     currentMemoryType = memoryType;
     fw->startUpdate(memoryType, toggleBankOnCurrentBoard);
 }
+
+
+
+
+
+
+
+
+
+
+
+
+connect(fw2, &FirmwareUpdateCAN::imageUploadCompleted, this, &Firmware::onBoardUpgraded);
+connect(fw2, &FirmwareUpdateCAN::errorNotification,    this, &Firmware::onObservedError);   // ✅ FIX
+connect(fw2, &FirmwareUpdateCAN::infoNotification,     this, &Firmware::onObservedInfo);
+connect(fw2, &FirmwareUpdateCAN::progressObserved,     this, &Firmware::onObservedProgress);
+connect(fw2, &FirmwareUpdateCAN::newProgressPhaseStarted, this, &Firmware::onPhaseChanged);
+connect(this, &Firmware::abortUpgrade, fw2, &FirmwareUpdateCAN::abortUpgrade, Qt::DirectConnection);
