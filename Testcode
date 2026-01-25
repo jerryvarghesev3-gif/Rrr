@@ -1,1 +1,119 @@
+if (MEM_MEMORY_TYPE_INTERNAL_FLASH == memoryType)
+{
+    if (GN2A_SOM == destination)
+    {
+        const QString baseDir = binPath; // folder
+        // binariesFound already exists in your function
 
+        // find tar
+        QRegularExpression tarRx("^dynamoSOMApp.*\\.tar\\.gz\\.enc$");
+        int idxTar = binariesFound.indexOf(tarRx);
+        if (idxTar < 0)
+        {
+            ProLog().w(MODULE_NAME, ("SOM tar not found in folder: " + baseDir).toStdString());
+            onBoardUpgraded(nullptr, destination, false);
+            return;
+        }
+        const QString tarName = binariesFound.at(idxTar);
+        const QString tarPath = baseDir + "/" + tarName;
+
+        // find decrypt (optional)
+        QRegularExpression decryptRx("^decrypt(\\..+)?$");
+        int idxDec = binariesFound.indexOf(decryptRx);
+
+        const bool hasDecrypt = (idxDec >= 0);
+        const QString decName = hasDecrypt ? binariesFound.at(idxDec) : QString();
+        const QString decPath = hasDecrypt ? (baseDir + "/" + decName) : QString();
+
+        // helper lambda to prepare + start a transfer
+        auto startTransfer = [&](FirmwareUpdateCAN* fw,
+                                 const QString& fileName,
+                                 const QString& filePath,
+                                 std::function<void(bool)> onDone)
+        {
+            fw->setImageData(filePath);
+            fw->onChangedSelectedServer(addressForUpdate, serverBoard, NULL);
+            fw->setDestination(destination);
+
+            MEM_SendImageFileNameRequest req = MEM_SendImageFileNameRequest_init_zero;
+            MEM_SendImageFileNameResponse rsp = MEM_SendImageFileNameResponse_init_zero;
+            req.memoryType = memoryType;
+
+            // SAFE copy (no overflow, always null-terminated)
+            QByteArray nameBytes = fileName.toUtf8();
+            memset(req.imageName, 0, sizeof(req.imageName));
+            int copyLen = nameBytes.size();
+            if (copyLen > (int)sizeof(req.imageName) - 1) copyLen = (int)sizeof(req.imageName) - 1;
+            memcpy(req.imageName, nameBytes.constData(), copyLen);
+
+            if (CMD_OK != MEM_SendImageFileName(GN2A_SOM, &req, &rsp))
+            {
+                ProLog().w(MODULE_NAME, (QString("Could not send file info for %1").arg(fileName)).toStdString());
+                onDone(false);
+                return;
+            }
+
+            // IMPORTANT: connect ONLY ONCE for completion
+            connect(fw, &FirmwareUpdateCAN::imageUploadCompleted, this,
+                    [=](FirmwareUpdateCAN* /*fwSig*/, quint32 /*board*/, bool ok)
+                    {
+                        onDone(ok);
+                    },
+                    Qt::QueuedConnection);
+
+            // keep your usual notifications (BUT DO NOT connect errorNotification to onBoardUpgraded!)
+            connect(fw, &FirmwareUpdateCAN::errorNotification, this, &Firmware::onObservedError);
+            connect(fw, &FirmwareUpdateCAN::infoNotification, this, &Firmware::onObservedInfo);
+            connect(fw, &FirmwareUpdateCAN::progressObserved, this, &Firmware::onObservedProgress);
+            connect(fw, &FirmwareUpdateCAN::newProgressPhaseStarted, this, &Firmware::onPhaseChanged);
+            connect(this, &Firmware::abortUpgrade, fw, &FirmwareUpdateCAN::abortUpgrade, Qt::DirectConnection);
+
+            fw->startUpdate(memoryType, false); // transfer starts
+        };
+
+        // ---- Sequence ----
+        if (hasDecrypt)
+        {
+            // 1) decrypt first
+            FirmwareUpdateCAN* fwDecrypt = new FirmwareUpdateCAN();
+            ProLog().i(MODULE_NAME, ("Uploading " + decName + " to SOM (first)").toStdString());
+
+            startTransfer(fwDecrypt, decName, decPath, [=](bool ok1)
+            {
+                if (!ok1)
+                {
+                    // decrypt failed -> fail whole operation
+                    onBoardUpgraded(fwDecrypt, destination, false);
+                    return;
+                }
+
+                // 2) tar second (ONLY tar completion drives main workflow)
+                FirmwareUpdateCAN* fwTar = new FirmwareUpdateCAN();
+                ProLog().i(MODULE_NAME, ("Uploading " + tarName + " to SOM (second)").toStdString());
+
+                startTransfer(fwTar, tarName, tarPath, [=](bool ok2)
+                {
+                    // Now we continue your existing workflow ONLY ON TAR completion
+                    onBoardUpgraded(fwTar, destination, ok2);
+                });
+            });
+
+            return; // prevent normal path from starting tar again
+        }
+        else
+        {
+            // no decrypt -> behave like old flow but using the same safe transfer
+            FirmwareUpdateCAN* fwTar = new FirmwareUpdateCAN();
+            ProLog().i(MODULE_NAME, ("Uploading " + tarName + " to SOM").toStdString());
+
+            startTransfer(fwTar, tarName, tarPath, [=](bool ok2)
+            {
+                onBoardUpgraded(fwTar, destination, ok2);
+            });
+
+            return;
+        }
+    }
+
+    // ✅ everything below remains your existing code for other boards...
+}
