@@ -1,1 +1,109 @@
+if (MEM_MEMORY_TYPE_INTERNAL_FLASH == memoryType)
+{
+    if (GN2A_SOM == destination)
+    {
+        const QString baseDir = binPath;
 
+        // --- find SOM tar ---
+        QRegularExpression tarRx("^dynamoSOMApp.*\\.tar\\.gz\\.enc$");
+        int tarIndex = binariesFound.indexOf(tarRx);
+        if (tarIndex < 0)
+        {
+            ProLog().w(MODULE_NAME, "SOM tar not found");
+            onBoardUpgraded(nullptr, destination, false);
+            return;
+        }
+
+        const QString somTarName = binariesFound.at(tarIndex);
+        const QString somTarPath = baseDir + "/" + somTarName;
+
+        // --- find decrypt (optional) ---
+        QRegularExpression decryptRx("^decrypt(\\..+)?$");
+        int decryptIndex = binariesFound.indexOf(decryptRx);
+
+        QString decryptName;
+        QString decryptPath;
+        if (decryptIndex >= 0)
+        {
+            decryptName = binariesFound.at(decryptIndex);
+            decryptPath = baseDir + "/" + decryptName;
+        }
+
+        // ✅ ONE firmware object only
+        FirmwareUpdateCAN* fw = new FirmwareUpdateCAN();
+        fw->onChangedSelectedServer(addressForUpdate, serverBoard, NULL);
+        fw->setDestination(destination);
+
+        // ---- CASE 1: decrypt exists ----
+        if (!decryptName.isEmpty())
+        {
+            ProLog().i(MODULE_NAME, ("Downloading " + decryptName + " to SOM").toStdString());
+
+            fw->setImageData(decryptPath);
+
+            MEM_SendImageFileNameRequest req = MEM_SendImageFileNameRequest_init_zero;
+            MEM_SendImageFileNameResponse rsp = MEM_SendImageFileNameResponse_init_zero;
+            req.memoryType = memoryType;
+            memcpy(req.imageName, decryptName.toStdString().c_str(), decryptName.size());
+
+            if (CMD_OK != MEM_SendImageFileName(GN2A_SOM, &req, &rsp))
+            {
+                onBoardUpgraded(fw, destination, false);
+                return;
+            }
+
+            // after decrypt → send SOM tar
+            connect(fw, &FirmwareUpdateCAN::imageUploadCompleted,
+                    this,
+                    [=](FirmwareUpdateCAN*, quint32, bool ok)
+                    {
+                        if (!ok) {
+                            onBoardUpgraded(fw, destination, false);
+                            return;
+                        }
+
+                        ProLog().i(MODULE_NAME, ("Downloading " + somTarName + " to SOM").toStdString());
+
+                        fw->setImageData(somTarPath);
+
+                        MEM_SendImageFileNameRequest req2 = MEM_SendImageFileNameRequest_init_zero;
+                        MEM_SendImageFileNameResponse rsp2 = MEM_SendImageFileNameResponse_init_zero;
+                        req2.memoryType = memoryType;
+                        memcpy(req2.imageName, somTarName.toStdString().c_str(), somTarName.size());
+
+                        if (CMD_OK != MEM_SendImageFileName(GN2A_SOM, &req2, &rsp2))
+                        {
+                            onBoardUpgraded(fw, destination, false);
+                            return;
+                        }
+
+                        fw->startUpdate(memoryType, false);
+                    },
+                    Qt::QueuedConnection);
+
+            fw->startUpdate(memoryType, false);
+            return;
+        }
+
+        // ---- CASE 2: NO decrypt (old behavior) ----
+        ProLog().i(MODULE_NAME, ("Downloading " + somTarName + " to SOM").toStdString());
+
+        fw->setImageData(somTarPath);
+
+        MEM_SendImageFileNameRequest req = MEM_SendImageFileNameRequest_init_zero;
+        MEM_SendImageFileNameResponse rsp = MEM_SendImageFileNameResponse_init_zero;
+        req.memoryType = memoryType;
+        memcpy(req.imageName, somTarName.toStdString().c_str(), somTarName.size());
+
+        if (CMD_OK != MEM_SendImageFileName(GN2A_SOM, &req, &rsp))
+        {
+            onBoardUpgraded(fw, destination, false);
+            return;
+        }
+
+        fw->startUpdate(memoryType, false);
+        return;
+    }
+
+    // ✅ everything below remains EXACTLY as before (other boards via MCB)
+}
