@@ -297,3 +297,140 @@ if (MEM_MEMORY_TYPE_INTERNAL_FLASH == memoryType)
 
     // ✅ everything below remains yours (other boards logic)
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+if (MEM_MEMORY_TYPE_INTERNAL_FLASH == memoryType)
+{
+    if (GN2A_SOM == destination)
+    {
+        const QString baseDir = binPath; // folder
+
+        // --- find tar ---
+        QRegularExpression tarRx("^dynamoSOMApp.*\\.tar\\.gz\\.enc$");
+        const int indexOfTarBinary = binariesFound.indexOf(tarRx);
+        if (indexOfTarBinary < 0)
+        {
+            ProLog().w(MODULE_NAME, ("SOM tar not found in folder: " + baseDir).toStdString());
+            onBoardUpgraded(nullptr, destination, false);
+            return;
+        }
+
+        const QString tarName = binariesFound.at(indexOfTarBinary);
+        const QString tarPath = baseDir + "/" + tarName;
+
+        // --- optional decrypt ---
+        QRegularExpression decryptRx("^decrypt(\\..+)?$");
+        const int indexOfDecrypt = binariesFound.indexOf(decryptRx);
+
+        QString decryptName;
+        QString decryptPath;
+        const bool hasDecrypt = (indexOfDecrypt >= 0);
+        if (hasDecrypt)
+        {
+            decryptName = binariesFound.at(indexOfDecrypt);
+            decryptPath = baseDir + "/" + decryptName;
+        }
+
+        // Small helper: send filename + start upload
+        auto sendFileInfoAndStart = [&](FirmwareUpdateCAN* fw,
+                                        const QString& fileName,
+                                        const QString& filePath,
+                                        std::function<void(bool)> onDone)
+        {
+            fw->setImageData(filePath);
+            fw->onChangedSelectedServer(addressForUpdate, serverBoard, QString()); // ✅ NO NULL
+            fw->setDestination(destination);
+
+            MEM_SendImageFileNameRequest req = MEM_SendImageFileNameRequest_init_zero;
+            MEM_SendImageFileNameResponse rsp = MEM_SendImageFileNameResponse_init_zero;
+            req.memoryType = memoryType;
+
+            // safer copy
+            const QByteArray nameBytes = fileName.toUtf8();
+            memset(req.imageName, 0, sizeof(req.imageName));
+            const int copyLen = qMin<int>(nameBytes.size(), int(sizeof(req.imageName) - 1));
+            memcpy(req.imageName, nameBytes.constData(), copyLen);
+
+            ProLog().i(MODULE_NAME, (QString("Downloading %1 to SOM").arg(fileName)).toStdString());
+
+            if (CMD_OK != MEM_SendImageFileName(GN2A_SOM, &req, &rsp))
+            {
+                ProLog().w(MODULE_NAME, (QString("Could not send file info for %1").arg(fileName)).toStdString());
+                onBoardUpgraded(fw, destination, false);
+                if (onDone) onDone(false);
+                return;
+            }
+
+            // When upload completes, call your normal handler + then chain next
+            connect(fw, &FirmwareUpdateCAN::imageUploadCompleted, this,
+                    [=](FirmwareUpdateCAN* fwDone, quint32 /*board*/, bool ok)
+                    {
+                        onBoardUpgraded(fwDone, destination, ok);
+                        if (onDone) onDone(ok);
+                    },
+                    Qt::QueuedConnection);
+
+            // Keep your existing connects (these were correct mappings)
+            connect(fw, &FirmwareUpdateCAN::errorNotification, this, &Firmware::onObservedError);
+            connect(fw, &FirmwareUpdateCAN::infoNotification,  this, &Firmware::onObservedInfo);
+            connect(fw, &FirmwareUpdateCAN::progressObserved,  this, &Firmware::onObservedProgress);
+            connect(fw, &FirmwareUpdateCAN::newProgressPhaseStarted, this, &Firmware::onPhaseChanged);
+            connect(this, &Firmware::abortUpgrade, fw, &FirmwareUpdateCAN::abortUpgrade, Qt::DirectConnection);
+
+            currentMemoryType = memoryType;
+            fw->startUpdate(memoryType, false);
+        };
+
+        // ✅ ORDER FIX:
+        // If decrypt exists -> upload decrypt FIRST, then tar SECOND
+        if (hasDecrypt)
+        {
+            FirmwareUpdateCAN* fwDecrypt = new FirmwareUpdateCAN();
+
+            sendFileInfoAndStart(
+                fwDecrypt,
+                decryptName,
+                decryptPath,
+                [=](bool okDecrypt)
+                {
+                    if (!okDecrypt) return;
+
+                    FirmwareUpdateCAN* fwTar = new FirmwareUpdateCAN();
+                    sendFileInfoAndStart(
+                        fwTar,
+                        tarName,
+                        tarPath,
+                        nullptr // nothing after tar
+                    );
+                }
+            );
+
+            return; // SOM handled here
+        }
+        else
+        {
+            // No decrypt -> just upload tar
+            FirmwareUpdateCAN* fwTar = new FirmwareUpdateCAN();
+            sendFileInfoAndStart(fwTar, tarName, tarPath, nullptr);
+            return; // SOM handled here
+        }
+    }
+
+    // ✅ everything below remains yours (other boards / old logic)
+}
