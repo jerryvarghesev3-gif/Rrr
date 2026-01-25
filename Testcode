@@ -112,3 +112,15 @@ if (MEM_MEMORY_TYPE_INTERNAL_FLASH == memoryType)
     // ✅ EVERYTHING BELOW REMAINS YOUR EXISTING CODE (other internal-flash boards)
     // (do not modify)
 }
+
+
+
+
+
+
+const QByteArray nameBytes = fileName.toUtf8();
+const int maxCopy = static_cast<int>(sizeof(req.imageName)) - 1;
+const int copyLen = (nameBytes.size() < maxCopy) ? nameBytes.size() : maxCopy;
+
+memset(req.imageName, 0, sizeof(req.imageName));
+memcpy(req.imageName, nameBytes.constData(), copyLen);
