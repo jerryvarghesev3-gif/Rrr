@@ -1,1 +1,104 @@
 
+if (MEM_MEMORY_TYPE_INTERNAL_FLASH == memoryType)
+{
+    if (GN2A_SOM == destination)
+    {
+        // binPath is a folder that contains:
+        //  - dynamoSOMApp*.tar.gz.enc
+        //  - optional decrypt or decrypt.*
+        const QString baseDir = binPath;
+
+        // If you already have binariesFound earlier, remove these 2 lines and reuse yours.
+        QDir dir(baseDir);
+        QStringList binariesFound = dir.entryList(QDir::Files | QDir::NoDotAndDotDot);
+
+        // Find tar
+        QRegularExpression tarRx("^dynamoSOMApp.*\\.tar\\.gz\\.enc$");
+        const int tarIdx = binariesFound.indexOf(tarRx);
+        if (tarIdx < 0)
+        {
+            ProLog().w(MODULE_NAME, QString("SOM tar not found in folder: %1").arg(baseDir).toStdString());
+            onBoardUpgraded(nullptr, destination, false);
+            return;
+        }
+
+        const QString tarName = binariesFound.at(tarIdx);
+        const QString tarPath = baseDir + "/" + tarName;
+
+        // Find decrypt (optional)
+        QRegularExpression decryptRx("^decrypt(\\..+)?$");
+        const int decIdx = binariesFound.indexOf(decryptRx);
+        const bool hasDecrypt = (decIdx >= 0);
+
+        const QString decName = hasDecrypt ? binariesFound.at(decIdx) : QString();
+        const QString decPath = hasDecrypt ? (baseDir + "/" + decName) : QString();
+
+        auto sendFileToSom = [&](const QString& fileName,
+                                const QString& filePath,
+                                std::function<void()> onSuccessStartNext)
+        {
+            ProLog().i(MODULE_NAME, QString("Downloading %1 to SOM").arg(fileName).toStdString());
+
+            FirmwareUpdateCAN* fw = new FirmwareUpdateCAN();
+            fw->setImageData(filePath);
+            fw->onChangedSelectedServer(addressForUpdate, serverBoard, NULL);
+            fw->setDestination(destination);
+
+            MEM_SendImageFileNameRequest req = MEM_SendImageFileNameRequest_init_zero;
+            MEM_SendImageFileNameResponse rsp = MEM_SendImageFileNameResponse_init_zero;
+            req.memoryType = memoryType;
+
+            // safe copy + null terminate
+            std::string n = fileName.toStdString();
+            memset(req.imageName, 0, sizeof(req.imageName));
+            memcpy(req.imageName, n.c_str(), std::min(n.size(), sizeof(req.imageName) - 1));
+
+            if (CMD_OK != MEM_SendImageFileName(GN2A_SOM, &req, &rsp))
+            {
+                ProLog().w(MODULE_NAME, QString("Could not send file info for %1").arg(fileName).toStdString());
+                onBoardUpgraded(fw, destination, false);
+                return;
+            }
+
+            // ✅ keep your existing correct connects (no signature mismatch)
+            connect(fw, &FirmwareUpdateCAN::imageUploadCompleted, this, &Firmware::onBoardUpgraded);
+            connect(fw, &FirmwareUpdateCAN::errorNotification,     this, &Firmware::onObservedError);
+            connect(fw, &FirmwareUpdateCAN::infoNotification,      this, &Firmware::onObservedInfo);
+            connect(fw, &FirmwareUpdateCAN::progressObserved,      this, &Firmware::onObservedProgress);
+            connect(fw, &FirmwareUpdateCAN::newProgressPhaseStarted,this, &Firmware::onPhaseChanged);
+            connect(this, &Firmware::abortUpgrade, fw, &FirmwareUpdateCAN::abortUpgrade, Qt::DirectConnection);
+
+            // When upload completed, start next step (if any)
+            if (onSuccessStartNext)
+            {
+                connect(fw, &FirmwareUpdateCAN::imageUploadCompleted, this,
+                        [=](unsigned int, QString, bool ok)
+                        {
+                            if (ok) onSuccessStartNext();
+                        },
+                        Qt::QueuedConnection);
+            }
+
+            currentMemoryType = memoryType;
+            fw->startUpdate(memoryType, false);
+        };
+
+        // ✅ FIX ORDER:
+        // decrypt FIRST, tar LAST
+        if (hasDecrypt)
+        {
+            sendFileToSom(decName, decPath, [=]() {
+                sendFileToSom(tarName, tarPath, nullptr);
+            });
+        }
+        else
+        {
+            sendFileToSom(tarName, tarPath, nullptr);
+        }
+
+        return; // important: we handled SOM fully
+    }
+
+    // ✅ everything below remains yours (other boards)
+    // ... your existing INTERNAL_FLASH non-SOM code ...
+}
