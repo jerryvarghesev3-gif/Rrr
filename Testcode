@@ -124,3 +124,139 @@ const int copyLen = (nameBytes.size() < maxCopy) ? nameBytes.size() : maxCopy;
 
 memset(req.imageName, 0, sizeof(req.imageName));
 memcpy(req.imageName, nameBytes.constData(), copyLen);
+
+
+
+
+
+
+
+
+
+
+
+
+
+if (MEM_MEMORY_TYPE_INTERNAL_FLASH == memoryType)
+{
+    if (GN2A_SOM == destination)
+    {
+        const QString baseDir = binPath;   // folder
+
+        // Find tar
+        QRegularExpression tarRx("^dynamoSOMApp.*\\.tar\\.gz\\.enc$");
+        int idxTar = binariesFound.indexOf(tarRx);
+        if (idxTar < 0)
+        {
+            ProLog().w(MODULE_NAME, QString("SOM tar not found in folder: %1").arg(baseDir).toStdString());
+            onBoardUpgraded(nullptr, destination, false);
+            return;
+        }
+        const QString tarName = binariesFound.at(idxTar);
+        const QString tarPath = baseDir + "/" + tarName;
+
+        // Find decrypt
+        QRegularExpression decryptRx("^decrypt(\\..+)?$");
+        int idxDec = binariesFound.indexOf(decryptRx);
+
+        // If decrypt missing, you can decide: fail OR upload only tar.
+        // I’ll keep it STRICT (fail) since SOM needs decrypt.
+        if (idxDec < 0)
+        {
+            ProLog().w(MODULE_NAME, QString("decrypt not found in folder: %1").arg(baseDir).toStdString());
+            onBoardUpgraded(nullptr, destination, false);
+            return;
+        }
+        const QString decName = binariesFound.at(idxDec);
+        const QString decPath = baseDir + "/" + decName;
+
+        auto sendFileInfo = [&](const QString& name) -> bool {
+            MEM_SendImageFileNameRequest req = MEM_SendImageFileNameRequest_init_zero;
+            MEM_SendImageFileNameResponse rsp = MEM_SendImageFileNameResponse_init_zero;
+            req.memoryType = memoryType;
+
+            const QByteArray nameBytes = name.toUtf8();
+            memset(req.imageName, 0, sizeof(req.imageName));
+            const int copyLen = std::min<int>(nameBytes.size(), (int)sizeof(req.imageName) - 1);
+            memcpy(req.imageName, nameBytes.constData(), copyLen);
+
+            return (CMD_OK == MEM_SendImageFileName(GN2A_SOM, &req, &rsp));
+        };
+
+        // 1) Upload decrypt
+        ProLog().i(MODULE_NAME, QString("Uploading %1 to SOM").arg(decName).toStdString());
+
+        FirmwareUpdateCAN* fwDec = new FirmwareUpdateCAN();
+        fwDec->setImageData(decPath);
+        fwDec->onChangedSelectedServer(addressForUpdate, serverBoard, NULL);
+        fwDec->setDestination(destination);
+
+        if (!sendFileInfo(decName))
+        {
+            ProLog().w(MODULE_NAME, QString("Could not send file info for %1").arg(decName).toStdString());
+            onBoardUpgraded(fwDec, destination, false);
+            return;
+        }
+
+        // When decrypt upload completes, upload tar
+        connect(
+            fwDec,
+            &FirmwareUpdateCAN::imageUploadCompleted,
+            this,
+            [=](unsigned int /*dest*/, QString /*msg*/, bool ok)
+            {
+                if (!ok)
+                {
+                    onBoardUpgraded(fwDec, destination, false);
+                    return;
+                }
+
+                // 2) Upload tar
+                ProLog().i(MODULE_NAME, QString("Uploading %1 to SOM").arg(tarName).toStdString());
+
+                FirmwareUpdateCAN* fwTar = new FirmwareUpdateCAN();
+                fwTar->setImageData(tarPath);
+                fwTar->onChangedSelectedServer(addressForUpdate, serverBoard, NULL);
+                fwTar->setDestination(destination);
+
+                if (!sendFileInfo(tarName))
+                {
+                    ProLog().w(MODULE_NAME, QString("Could not send file info for %1").arg(tarName).toStdString());
+                    onBoardUpgraded(fwTar, destination, false);
+                    return;
+                }
+
+                // When tar upload completes -> DONE (do NOT start upgrade)
+                connect(
+                    fwTar,
+                    &FirmwareUpdateCAN::imageUploadCompleted,
+                    this,
+                    [=](unsigned int /*dest*/, QString /*msg*/, bool ok2)
+                    {
+                        onBoardUpgraded(fwTar, destination, ok2);
+                        // success -> move to next board
+                    },
+                    Qt::QueuedConnection);
+
+                // Keep your normal progress/error hooks if needed:
+                connect(fwTar, &FirmwareUpdateCAN::errorNotification, this, &Firmware::onObservedError);
+                connect(fwTar, &FirmwareUpdateCAN::infoNotification, this, &Firmware::onObservedInfo);
+                connect(fwTar, &FirmwareUpdateCAN::progressObserved, this, &Firmware::onObservedProgress);
+                connect(fwTar, &FirmwareUpdateCAN::newProgressPhaseStarted, this, &Firmware::onPhaseChanged);
+
+                fwTar->startUpdate(memoryType, false); // this should ONLY upload in your implementation
+            },
+            Qt::QueuedConnection);
+
+        // Hooks for decrypt uploader
+        connect(fwDec, &FirmwareUpdateCAN::errorNotification, this, &Firmware::onObservedError);
+        connect(fwDec, &FirmwareUpdateCAN::infoNotification, this, &Firmware::onObservedInfo);
+        connect(fwDec, &FirmwareUpdateCAN::progressObserved, this, &Firmware::onObservedProgress);
+        connect(fwDec, &FirmwareUpdateCAN::newProgressPhaseStarted, this, &Firmware::onPhaseChanged);
+
+        fwDec->startUpdate(memoryType, false); // upload only
+        return;
+    }
+
+    // ✅ everything below remains your existing logic for other boards
+}
