@@ -162,3 +162,61 @@ if (MEM_MEMORY_TYPE_INTERNAL_FLASH == memoryType)
 
     // ✅ below this line: keep your old code EXACTLY (other boards via MCB)
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+if (GN2A_SOM == destination)
+{
+    QRegularExpression tarRx = QRegularExpression("dynamoSOMApp*\\.tar.gz.enc");
+    int32_t indexOfTarBinary = binariesFound.indexOf(tarRx);
+
+    if (indexOfTarBinary > -1)
+    {
+        // build TAR path (old logic)
+        somFileName = binariesFound.at(indexOfTarBinary);
+
+        QString baseDir = binPath;     // keep base dir before appending file
+        baseDir.append("/");
+
+        QString tarPath = baseDir + somFileName;
+
+        // --- NEW: find decrypt optional ---
+        QRegularExpression decryptRx("^decrypt(\\..+)?$");
+        int32_t decryptIndex = binariesFound.indexOf(decryptRx);
+
+        if (decryptIndex > -1)
+        {
+            QString decryptName = binariesFound.at(decryptIndex);
+            QString decryptPath = baseDir + decryptName;
+
+            // store TAR for later (after decrypt completes)
+            somPendingTar     = true;
+            somPendingTarName = somFileName;
+            somPendingTarPath = tarPath;
+
+            // swap: first upload decrypt
+            somFileName = decryptName;
+            binPath = decryptPath;
+
+            ProLog().i(MODULE_NAME, ("Uploading decrypt first: " + somFileName).toStdString());
+        }
+        else
+        {
+            // no decrypt -> normal TAR flow
+            binPath = tarPath;
+        }
+    }
+}
