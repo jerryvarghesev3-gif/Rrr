@@ -70,3 +70,47 @@ private fun load(appContext: Context) {
         deviceBloc.startBedStatusPoll()
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+if (isDecryptPresent)
+{
+    const QString decryptFileName = "decrypt";
+
+    // IMPORTANT: don't modify binPath in-place
+    QString decryptPath = binPath;
+    decryptPath.replace(somFileName, decryptFileName);
+
+    FirmwareUpdateCAN* fw1 = new FirmwareUpdateCAN();
+    fw1->setImageData(decryptPath);
+    fw1->onChangedSelectedServer(addressForUpdate, serverBoard, NULL);
+    fw1->setDestination(destination);
+
+    MEM_SendImageFileNameRequest  req1 = MEM_SendImageFileNameRequest_init_zero;
+    MEM_SendImageFileNameResponse rsp1 = MEM_SendImageFileNameResponse_init_zero;
+    req1.memoryType = memoryType;
+
+    // send the decrypt filename (NOT somFileName)
+    memset(req1.imageName, 0, sizeof(req1.imageName));
+    QByteArray dn = decryptFileName.toUtf8();
+    memcpy(req1.imageName, dn.constData(),
+           std::min((int)sizeof(req1.imageName) - 1, dn.size()));
+
+    ProLog().i(MODULE_NAME, "Downloading " + std::string(req1.imageName) + " to SOM");
+
+    if (CMD_OK != MEM_SendImageFileName(GN2A_SOM, &req1, &rsp1))
+    {
+        ProLog().w(MODULE_NAME, "Could not send decrypt file info to " + board.toStdString());
+        onBoardUpgraded(fw1, destination, false);
+        return;
+    }
+}
