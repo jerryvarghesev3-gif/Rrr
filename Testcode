@@ -1,1 +1,72 @@
+private fun load(appContext: Context) {
+    loadJob?.cancel()
 
+    loadJob = viewModelScope.launch {
+
+        // ✅ Always stop previous state first (prevents infinite loading)
+        hardStopAndDisconnect()
+
+        // ✅ 1) USB + permission FIRST (this triggers popup if needed)
+        val dev = getFirstUsbDevice(appContext)
+        if (dev == null) {
+            updateState {
+                it.copy(
+                    loadingStatus = LoadingStatus.Error,
+                    incompatibleProductDialogVisible = true,
+                    incompatibleProductMessage = "No USB device detected."
+                )
+            }
+            return@launch
+        }
+
+        val usbManager = appContext.getSystemService(Context.USB_SERVICE) as UsbManager
+        if (!usbManager.hasPermission(dev)) {
+            requestUsbPermission(appContext, dev)
+            updateState {
+                it.copy(
+                    loadingStatus = LoadingStatus.Error,
+                    incompatibleProductDialogVisible = true,
+                    incompatibleProductMessage = "USB permission required. Please tap Allow."
+                )
+            }
+            return@launch
+        }
+
+        // ✅ 2) Detect product BEFORE connect
+        val text = "${dev.productName} ${dev.manufacturerName}".uppercase()
+        val detected = when {
+            text.contains("P80") -> MedDevices.DYNAMO
+            text.contains("P79") -> MedDevices.CENTRELLA
+            else -> null
+        }
+
+        if (detected != null && detected != MedDevices.CENTRELLA) {
+            updateState {
+                it.copy(
+                    loadingStatus = LoadingStatus.Error,
+                    incompatibleProductDialogVisible = true,
+                    incompatibleProductMessage = "Wrong product connected. Please connect to Centrella.",
+                    suppressDisconnectModal = true
+                )
+            }
+            // ✅ make sure connection is not left half-open
+            hardStopAndDisconnect()
+            return@launch
+        }
+
+        // ✅ 3) NOW connect (only for valid product)
+        if (!connectionBloc.isConnected()) {
+            updateState { it.copy(loadingStatus = LoadingStatus.Connecting) }
+
+            if (connectionBloc.connect(GN2_Address.SYS_DIAG) is Outcome.Error) {
+                updateState { it.copy(loadingStatus = LoadingStatus.Error) }
+                return@launch
+            }
+        }
+
+        // ✅ 4) Only after valid + connected
+        deviceBloc.startBoardCollection()
+        loadProperties()
+        deviceBloc.startBedStatusPoll()
+    }
+}
