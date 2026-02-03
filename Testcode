@@ -1,1 +1,181 @@
+if (MEM_MEMORY_TYPE_INTERNAL_FLASH == memoryType)
+{
+    if (GN2A_SOM == destination)
+    {
+        // find SOMApp tarball
+        QRegularExpression tarRx("dynamoSOMApp.*\\.tar\\.gz\\.enc");
+        int32_t indexOfTarBinary = binariesFound.indexOf(tarRx);
+
+        bool tarFound = (indexOfTarBinary > -1);
+
+        // Detect decrypt in BAS (exact match OR any entry containing decrypt)
+        QString decryptEntry;
+        for (const QString& s : binariesFound)
+        {
+            if (s == "decrypt" || s.contains("decrypt", Qt::CaseInsensitive))
+            {
+                decryptEntry = s;
+                break;
+            }
+        }
+        bool decryptFound = !decryptEntry.isEmpty();
+
+        // Choose what we upload FIRST (SOMApp if present else fallback)
+        if (tarFound)
+        {
+            somFileName = binariesFound.at(indexOfTarBinary);
+            binPath.append("/");
+            binPath.append(somFileName);
+
+            // If decrypt exists, prepare its path and arm the flag
+            if (decryptFound)
+            {
+                // decrypt file must be in same folder; use exact entry if it's not literally "decrypt"
+                m_decryptPath = QFileInfo(binPath).dir().absoluteFilePath(decryptEntry);
+                m_decryptMemType = memoryType;
+                m_decryptDestination = destination;
+                m_decryptAddressForUpdate = addressForUpdate;
+                m_decryptServerBoard = serverBoard;
+
+                m_sendDecryptAfterSOMApp = true;
+
+                ProLog().i(MODULE_NAME, "Decrypt detected: " + decryptEntry.toStdString() +
+                                       " path=" + m_decryptPath.toStdString());
+            }
+            else
+            {
+                m_sendDecryptAfterSOMApp = false;
+            }
+        }
+        else
+        {
+            // no tarball found -> fallback to internal binary list (unchanged)
+            binPath.append("/");
+            binPath.append(internalBinaries[destination]);
+            somFileName = internalBinaries[destination];
+
+            // if fallback itself is decrypt, don't schedule second stage
+            m_sendDecryptAfterSOMApp = false;
+        }
+
+        toggleBankOnCurrentBoard = false;
+    }
+    else
+    {
+        binPath.append("/");
+        binPath.append(internalBinaries[destination]);
+    }
+}
+
+
+
+
+
+
+
+
+
+
+memset(req.imageName, 0, sizeof(req.imageName));
+QByteArray n = somFileName.toUtf8();
+int copyLen = std::min((int)sizeof(req.imageName) - 1, (int)n.size());
+memcpy(req.imageName, n.constData(), copyLen);
+req.imageName[copyLen] = '\0';
+
+
+
+
+
+
+
+
+
+
+
+void Firmware::onBoardUpgraded(FirmwareUpdateCAN* fw, quint32 address, bool success)
+{
+    // Stage 1 complete: SOMApp uploaded successfully and decrypt is scheduled
+    if (address == GN2A_SOM && success && m_sendDecryptAfterSOMApp)
+    {
+        // clear flag so it won't run again
+        m_sendDecryptAfterSOMApp = false;
+
+        // delete SOMApp uploader
+        if (fw != nullptr)
+        {
+            delete fw;
+            fw = nullptr;
+        }
+
+        // Verify decrypt file exists before trying to upload
+        QFileInfo fi(m_decryptPath);
+        ProLog().i(MODULE_NAME,
+            "Starting decrypt upload. exists=" + std::to_string(fi.exists()) +
+            " size=" + std::to_string((long long)fi.size()) +
+            " path=" + m_decryptPath.toStdString());
+
+        if (!fi.exists() || fi.size() <= 0)
+        {
+            ProLog().w(MODULE_NAME, "Decrypt file missing or empty, skipping decrypt upload");
+            updateComplete[address] = true;
+            updateSuccessful[address] = false;
+            return;
+        }
+
+        // Start decrypt upload as a NEW upload session
+        FirmwareUpdateCAN* fw1 = new FirmwareUpdateCAN();
+        fw1->setImageData(m_decryptPath);
+        fw1->onChangedSelectedServer(m_decryptAddressForUpdate, m_decryptServerBoard, NULL);
+        fw1->setDestination(GN2A_SOM);
+
+        // Send filename "decrypt" (or the actual decrypt filename if needed)
+        MEM_SendImageFileNameRequest req1 = MEM_SendImageFileNameRequest_init_zero;
+        MEM_SendImageFileNameResponse rsp1 = MEM_SendImageFileNameResponse_init_zero;
+        req1.memoryType = m_decryptMemType;
+
+        memset(req1.imageName, 0, sizeof(req1.imageName));
+        QByteArray dn = QFileInfo(m_decryptPath).fileName().toUtf8();  // <-- important
+        int copyLen = std::min((int)sizeof(req1.imageName) - 1, (int)dn.size());
+        memcpy(req1.imageName, dn.constData(), copyLen);
+        req1.imageName[copyLen] = '\0';
+
+        ProLog().i(MODULE_NAME, "Decrypt SendImageFileName=" + std::string(req1.imageName));
+
+        if (CMD_OK != MEM_SendImageFileName(GN2A_SOM, &req1, &rsp1))
+        {
+            ProLog().w(MODULE_NAME, "Could not send decrypt file info to SOM");
+            updateComplete[address] = true;
+            updateSuccessful[address] = false;
+            delete fw1;
+            return;
+        }
+
+        connect(fw1, &FirmwareUpdateCAN::imageUploadCompleted, this, &Firmware::onBoardUpgraded);
+        connect(fw1, &FirmwareUpdateCAN::errorNotification, this, &Firmware::onObservedError);
+        connect(fw1, &FirmwareUpdateCAN::infoNotification, this, &Firmware::onObservedInfo);
+        connect(fw1, &FirmwareUpdateCAN::progressObserved, this, &Firmware::onObservedProgress);
+        connect(fw1, &FirmwareUpdateCAN::newProgressPhaseStarted, this, &Firmware::onPhaseChanged);
+        connect(this, &Firmware::abortUpgrade, fw1, &FirmwareUpdateCAN::abortUpgrade, Qt::DirectConnection);
+
+        fw1->startUpdate(m_decryptMemType, false);
+        return;
+    }
+
+    // Normal completion handling
+    if (address != 0xFF)
+    {
+        updateComplete[address] = true;
+        updateSuccessful[address] = success;
+    }
+
+    if (fw != nullptr)
+        delete fw;
+}
+
+
+
+
+
+
+
 
