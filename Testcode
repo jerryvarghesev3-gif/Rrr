@@ -1,1 +1,107 @@
+void Firmware::onBoardUpgraded(FirmwareUpdateCAN* fw, quint32 address, bool success)
+{
+    // If SOMApp finished successfully and decrypt is queued, start decrypt upload now
+    if (address == GN2A_SOM && success && m_sendDecryptAfterSOMApp)
+    {
+        // consume the flag so it runs only once
+        m_sendDecryptAfterSOMApp = false;
 
+        // delete the completed uploader (SOMApp)
+        if (fw != nullptr)
+        {
+            delete fw;
+            fw = nullptr;
+        }
+
+        // Create uploader for decrypt
+        FirmwareUpdateCAN* fw1 = new FirmwareUpdateCAN();
+        fw1->setImageData(m_decryptPath);
+        fw1->onChangedSelectedServer(m_decryptAddressForUpdate, m_decryptServerBoard, NULL);
+        fw1->setDestination(GN2A_SOM);
+
+        // Tell SOM the filename is "decrypt"
+        MEM_SendImageFileNameRequest req1 = MEM_SendImageFileNameRequest_init_zero;
+        MEM_SendImageFileNameResponse rsp1 = MEM_SendImageFileNameResponse_init_zero;
+        req1.memoryType = m_decryptMemType;
+
+        memset(req1.imageName, 0, sizeof(req1.imageName));
+        QByteArray dn = QByteArray("decrypt");
+        int copyLen = std::min((int)sizeof(req1.imageName) - 1, (int)dn.size());
+        memcpy(req1.imageName, dn.constData(), copyLen);
+        req1.imageName[copyLen] = '\0';
+
+        ProLog().i(MODULE_NAME, "Downloading " + std::string(req1.imageName) + " to SOM");
+
+        if (CMD_OK != MEM_SendImageFileName(GN2A_SOM, &req1, &rsp1))
+        {
+            // mark failure
+            updateComplete[address] = true;
+            updateSuccessful[address] = false;
+            delete fw1;
+            return;
+        }
+
+        // connect + start decrypt upload
+        connect(fw1, &FirmwareUpdateCAN::imageUploadCompleted, this, &Firmware::onBoardUpgraded);
+        connect(fw1, &FirmwareUpdateCAN::errorNotification, this, &Firmware::onObservedError);
+        connect(fw1, &FirmwareUpdateCAN::infoNotification, this, &Firmware::onObservedInfo);
+        connect(fw1, &FirmwareUpdateCAN::progressObserved, this, &Firmware::onObservedProgress);
+        connect(fw1, &FirmwareUpdateCAN::newProgressPhaseStarted, this, &Firmware::onPhaseChanged);
+        connect(this, &Firmware::abortUpgrade, fw1, &FirmwareUpdateCAN::abortUpgrade, Qt::DirectConnection);
+
+        fw1->startUpdate(m_decryptMemType, false);
+
+        // IMPORTANT: do not mark updateComplete yet; decrypt is now running
+        return;
+    }
+
+    // normal completion (non-SOM, or decrypt completion)
+    if (address != 0xFF)
+    {
+        updateComplete[address] = true;
+        updateSuccessful[address] = success;
+    }
+
+    if (fw != nullptr)
+    {
+        delete fw;
+    }
+}
+
+
+
+
+
+
+
+
+
+
+memset(req.imageName, 0, sizeof(req.imageName));
+QByteArray n = somFileName.toUtf8();
+int copyLen = std::min((int)sizeof(req.imageName) - 1, (int)n.size());
+memcpy(req.imageName, n.constData(), copyLen);
+req.imageName[copyLen] = '\0';
+
+
+
+
+
+
+
+// queue decrypt ONLY if tarball exists AND decrypt exists in BAS
+m_sendDecryptAfterSOMApp = false;
+if (indexOfTarBinary > -1 && binariesFound.contains("decrypt"))
+{
+    // IMPORTANT: make a COPY of binPath so we don't modify it
+    m_decryptPath = binPath;
+    m_decryptPath.replace(somFileName, "decrypt");
+
+    m_decryptMemType = memoryType;
+    m_decryptAddressForUpdate = addressForUpdate;
+    m_decryptServerBoard = serverBoard;
+
+    m_sendDecryptAfterSOMApp = true;
+
+    ProLog().i(MODULE_NAME, "Decrypt queued. Path: " + m_decryptPath.toStdString());
+}
