@@ -1,1 +1,508 @@
+                   INSTALLATION PACKAGE
+┌──────────────────────────────────────────────────────┐
+│                                                      │
+│   MainApp.exe                                        │
+│   UpdaterAgent.exe                                   │
+│   payload.zip                                        │
+│      ├ compatibility.json                            │
+│      ├ rpms/                                         │
+│      ├ bins/                                         │
+│      └ metadata.json                                 │
+│                                                      │
+└──────────────────────────────────────────────────────┘
+                         │
+                         │ First Run / Install
+                         ▼
+
+        LOCAL STORAGE (AppData / ProgramData)
+
+┌──────────────────────────────────────────────────────┐
+│  C:\ProgramData\ProductUpdater\                      │
+│                                                      │
+│   payload\                                           │
+│      payload.zip                                     │
+│      extracted\                                      │
+│         compatibility.json                           │
+│         rpms/                                        │
+│         bins/                                        │
+│                                                      │
+│   state\                                             │
+│      device_output.json                              │
+│      plan.json                                       │
+│      resume.json                                     │
+│      status.json                                     │
+│                                                      │
+│   logs\                                              │
+│      updater.log                                     │
+│                                                      │
+└──────────────────────────────────────────────────────┘
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                     USER
+                      │
+                      ▼
+               ┌──────────────┐
+               │   MainApp    │
+               │   Qt UI      │
+               └──────┬───────┘
+                      │ Launch
+                      ▼
+
+               ┌──────────────┐
+               │ UpdaterAgent │
+               │ Core Engine  │
+               └──────┬───────┘
+                      │
+     ┌────────────────┼────────────────┐
+     │                │                │
+     ▼                ▼                ▼
+
+Payload Manager   Hardware Detector   Upgrade Planner
+Extract ZIP       CAN Scan            Read compatibility.json
+Verify files      Detect ICB/HIB      Build upgrade path
+Load JSON         Detect WAM          Generate plan.json
+
+
+     ┌────────────────┼────────────────┐
+     ▼                ▼                ▼
+
+Upgrade Executor   Resume Manager    Logger
+CAN flashing       resume.json       logs
+RPM install        reboot recovery   errors
+
+
+
+
+
+
+
+
+
+
+
+User starts MainApp.exe
+        │
+        ▼
+
+MainApp copies payload.zip
+to ProgramData/AppData
+        │
+        ▼
+
+MainApp launches UpdaterAgent
+        │
+        ▼
+
+UpdaterAgent starts
+        │
+        ▼
+
+Load payload.zip
+        │
+        ▼
+
+Verify payload integrity
+        │
+        ▼
+
+Extract payload
+        │
+        ▼
+
+Detect Hardware Configuration
+        │
+        ├─ Scan CAN Bus
+        │     Detect:
+        │     ICB
+        │     HIB count
+        │     MCB
+        │
+        ├─ Read WAM versions
+        │     OS version
+        │     App version
+        │
+        └─ Detect Interfaces
+              CAN
+              USB
+              WiFi
+
+        │
+        ▼
+
+Create device_output.json
+        │
+        ▼
+
+Read compatibility.json
+        │
+        ▼
+
+Compare
+device_output.json
+vs
+compatibility.json
+
+        │
+        ▼
+
+Build Upgrade Plan
+
+Example:
+
+1.04 → 2.12
+CAN only
+2 RPM files
+
+2.12 → 2.14
+USB/WiFi
+1 RPM
+
+        │
+        ▼
+
+Save plan.json
+        │
+        ▼
+
+Run Prechecks
+
+ • Disk space
+ • CAN available
+ • Power stable
+ • Files exist
+
+        │
+        ▼
+
+Execute Step 1
+CAN Upgrade
+
+(ICB/HIB/MCB/WAM prereq)
+        │
+        ▼
+
+Verify Versions
+        │
+        ▼
+
+Reached 2.12 ?
+        │
+        ├─ YES
+        │     │
+        │     ▼
+        │ Request Transport
+        │ (USB/WiFi popup)
+        │
+        │ User selects
+        │
+        │ Continue
+        │
+        ▼
+
+Execute Step 2
+USB/WiFi Upgrade
+
+Install RPM
+        │
+        ▼
+
+Verify Versions
+        │
+        ▼
+
+All Steps Completed?
+        │
+        ▼
+
+Final Verification
+
+ • CAN nodes
+ • WAM OS
+ • WAM App
+
+        │
+        ▼
+
+Create Logs
+        │
+        ▼
+
+Report SUCCESS
+to MainApp
+
+
+
+
+
+
+
+
+
+
+
+
+
+START
+  │
+  ▼
+
+LOAD_PAYLOAD
+
+  │
+  ▼
+
+DETECT_HARDWARE
+
+  │
+  ▼
+
+BUILD_PLAN
+
+  │
+  ▼
+
+PRECHECK
+
+  │
+  ▼
+
+EXECUTE_STEP
+
+  │
+  ├─ CAN Upgrade
+  │
+  ├─ RPM Install
+  │
+  ├─ Reboot
+  │
+  ├─ Verification
+  │
+  └─ User Choice Required
+        │
+        ▼
+     WAIT_USER
+
+        │
+        ▼
+
+NEXT_STEP
+
+  │
+  ▼
+
+FINAL_VERIFY
+
+  │
+  ▼
+
+SUCCESS / FAIL
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Updater reads:
+
+device_output.json
+
+Example:
+
+OS = 1.04
+APP = 2.14 clear
+HIB = 2
+MCB = present
+
+        │
+        ▼
+
+Updater reads:
+
+compatibility.json
+
+        │
+        ▼
+
+Planner computes:
+
+1.04 → 2.12
+
+CAN upgrade
+
+Packages:
+rpm1
+rpm2
+
+        │
+        ▼
+
+2.12 → 2.14
+
+USB/WiFi upgrade
+
+Package:
+rpm3
+
+        │
+        ▼
+
+Generate plan.json
+
+
+
+
+
+
+
+
+
+
+
+
+
+MainApp.exe
+   │
+   │ writes
+   ▼
+
+payload.zip
+   │
+   │ read
+   ▼
+
+UpdaterAgent.exe
+   │
+   ├── compatibility.json
+   │
+   ├── device_output.json
+   │
+   ├── plan.json
+   │
+   ├── resume.json
+   │
+   └── logs
+
+
+
+
+
+
+
+
+
+
+
+UpdaterAgent
+
+     │
+     ▼
+
+Scan CAN Bus
+
+     │
+     ├ Detect ICB
+     │
+     ├ Detect HIB1
+     │
+     ├ Detect HIB2
+     │
+     ├ Detect MCB
+     │
+     ▼
+
+Read Versions
+
+     │
+     ▼
+
+Read WAM OS
+
+     │
+     ▼
+
+Read WAM APP
+
+     │
+     ▼
+
+Generate:
+
+device_output.json
+
+
+
+
+
+
+
+
+
+
+
+             USER
+              │
+              ▼
+
+          MainApp
+           (Qt)
+
+              │
+
+              ▼
+
+        UpdaterAgent
+
+              │
+
+   ┌──────────┼───────────┐
+   ▼          ▼           ▼
+
+Payload   Hardware     Planner
+Reader    Detector
+
+              │
+              ▼
+
+         Executor
+
+              │
+              ▼
+
+          Hardware
+   (ICB/HIB/MCB/WAM)
+
+
+
+
+
+
+
+
+
+
 
