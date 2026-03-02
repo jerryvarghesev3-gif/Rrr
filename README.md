@@ -76,3 +76,37 @@ What Went Wrong – Dynamo Master Migration
 	•	Over time, formal requirements were not consistently provided.
 	•	As a result, development on the Dynamo project continued without a clearly defined or updated requirement specification, which made prioritization and planning more difficult.
 
+
+
+
+
+
+
+
+
+
+
+1. Sprint Planning and Workload Management
+	•	During development of the Service Tool, the sprint planning process did not follow a typical Agile/Scrum incremental approach.
+	•	A large number of tickets (representing hundreds of story points) were placed into active sprints simultaneously.
+	•	I suggested planning work incrementally per sprint (for example, 10–20 story points per two-week sprint) to allow better focus and tracking.
+	•	However, all tickets remained active so that overall progress could be monitored.
+	•	This resulted in:
+	•	Increased workload pressure
+	•	Difficulty prioritizing tasks
+	•	Extended working hours to manage the scope
+
+2. Limited System Testing Availability
+	•	From the early stages of development, I requested support for testing the application on target hardware (MCB & SOM).
+	•	At that time, the hardware environment was still not stable, which limited full system-level testing.
+	•	As a result:
+	•	Testing was mostly limited to developer-level testing.
+	•	Full validation of the Service Tool was delayed.
+	•	This lack of complete testing contributed to some of the issues identified later.
+
+3. Migration and Testing Gaps
+	•	During the re-migration of master into the Dynamo branch, a large number of conflicts had to be resolved.
+	•	Most functionality was tested after the migration.
+	•	However, due to the size and complexity of the changes:
+	•	Some working scenarios and code paths were unintentionally missed during testing.
+	•	This has been identified as an area for improvement in future migrations.
