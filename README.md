@@ -38,3 +38,41 @@ What Went Wrong – Dynamo Master Migration
 	•	Based on this recommendation:
 	•	I restarted the migration using the original Dynamo branch.
 	•	I completed a full fresh migration with the master branch.
+
+
+
+
+
+
+
+
+1. VM Configuration and Parallel Debugging (December)
+	•	In December, Veeru was assigned TCO-related work, so I shared my VM image (zip file) with him.
+	•	Both of us encountered the same Qt Creator relative-path configuration issues.
+	•	While Veeru was investigating the environment issue, I continued working in parallel on:
+	•	Fixing configuration problems
+	•	Implementing required features
+	•	This allowed progress to continue despite the environment challenges.
+
+2. Build Issues Identified (January)
+	•	In January, Jason checked out the Dynamo branch and attempted to build the project.
+	•	During the build process, he encountered:
+	•	Submodule configuration issues
+	•	CMakeLists configuration problems
+
+3. Issue Investigation and Resolution
+	•	We worked together to investigate the issue.
+	•	Initially, the root cause was not clear.
+	•	Jason shared screenshots of his build configuration.
+	•	After comparing configurations, we identified missing configuration settings, which allowed us to resolve the issue successfully.
+
+4. Process Deviation (Lessons Learned)
+	•	After completing the new migration, some minor patch fixes were merged directly into the branch.
+	•	These changes were made without following the standard migration or merge process, which was an oversight on my part.
+	•	This has been identified as a process improvement area going forward.
+
+5. Requirement Clarity Challenges
+	•	At the beginning of the project, development work was based on the SRS requirements.
+	•	Over time, formal requirements were not consistently provided.
+	•	As a result, development on the Dynamo project continued without a clearly defined or updated requirement specification, which made prioritization and planning more difficult.
+
