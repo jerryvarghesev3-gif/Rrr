@@ -158,3 +158,66 @@ Upgrade boards sequentially.
 Verify firmware version after each update.
 
 End with upgrade completion.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Create a vertical 7-layer architecture diagram for an Automated Firmware Updater with these layers in order:
+
+1. GUI Workflow
+   - connection screen
+   - device info
+   - progress
+   - logs
+   - result summary
+
+2. Launcher Core
+   - launcher.exe
+   - workflow controller
+   - configuration
+   - logging
+   - GUI-backend integration
+
+3. Installer and Bundle System
+   - App.exe
+   - bundle.zip
+   - AppData extraction
+   - file validation
+
+4. Communication Layer
+   - CAN
+   - WiFi/SFTP
+   - board discovery
+   - version reading
+   - heartbeat monitoring
+
+5. Compatibility Matrix Engine
+   - matrix parsing
+   - version comparison
+   - dependency rules
+   - transport selection
+
+6. Upgrade Planning Engine
+   - detect boards
+   - generate upgrade plan
+   - sequence boards
+   - assign update method
+
+7. Upgrade Execution Engine
+   - execute firmware transfer
+   - verify CRC
+   - synchronize reboot
+   - retry and recovery
+   - verify final version
+
+Use stacked horizontal blocks with arrows from top to bottom.
