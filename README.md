@@ -110,3 +110,42 @@ What Went Wrong – Dynamo Master Migration
 	•	However, due to the size and complexity of the changes:
 	•	Some working scenarios and code paths were unintentionally missed during testing.
 	•	This has been identified as an area for improvement in future migrations.
+
+
+
+
+
+
+
+
+Create a professional flowchart for an Automated Firmware Updater.
+
+Start with App.exe containing bundle.zip and launcher.exe.
+
+Extract bundle.zip to AppData.
+
+Decision: Was unzip successful?
+
+If no, check if required files exist in AppData.
+
+If files do not exist, show error popup "Unable to unzip or files not found".
+
+If files exist or unzip succeeds, start launcher.exe.
+
+launcher.exe reads hardware configuration, firmware version, bootloader version, and device configuration.
+
+Store this information in a device data structure.
+
+Load compatibility matrix from AppData.
+
+Determine transfer method and upgrade rules.
+
+Generate upgrade plan.
+
+Identify boards such as ICB, HIB, WAM.
+
+Upgrade boards sequentially.
+
+Verify firmware version after each update.
+
+End with upgrade completion.
