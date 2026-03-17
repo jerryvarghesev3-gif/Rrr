@@ -349,3 +349,117 @@ Tasks (1 SP / 1 Day Each)
 	•	Show firmware version results
 	•	Display success/failure messages
 	•	Generate upgrade report UI
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+STORY 7.1 — GUI Framework (5 SP)
+
+Description
+
+This story establishes the foundational GUI framework for the firmware updater application using Qt. It includes setting up the project structure, creating the main application window, implementing navigation, and building the initial connection screen.
+
+This framework acts as the base UI layer that will host all future screens such as device information, upgrade progress, and results.
+
+⸻
+
+Acceptance Criteria
+	•	Qt GUI project is created successfully
+	•	Application launches without errors
+	•	Main window loads correctly
+	•	Navigation layout is functional
+	•	Connection screen is displayed
+	•	GUI build and run validation passes
+
+⸻
+
+Tasks (1 SP / 1 Day Each)
+
+Task 1 — Create Qt GUI Project
+	•	Qt project is created successfully
+	•	Project builds without errors
+
+⸻
+
+Task 2 — Create Main Application Window
+	•	Main window opens on launch
+	•	Window layout initialized
+
+⸻
+
+Task 3 — Implement Navigation Layout
+	•	Navigation between screens is defined
+	•	Layout structure is reusable
+
+⸻
+
+Task 4 — Create Connection Screen
+	•	Connection UI screen created
+	•	Placeholder for device connection
+
+⸻
+
+Task 5 — GUI Build & Run Developer Validation
+	•	Application runs without crash
+	•	Basic UI flow verified
+
+⸻
+
+STORY 7.2 — Device Information Screen (4 SP)
+
+Description
+
+This story implements the UI screen that displays device-related information retrieved from the backend. It includes firmware version, hardware version, and other device metadata.
+
+This screen provides users with visibility into the current device state before upgrade.
+
+⸻
+
+Acceptance Criteria
+	•	Device information UI panel is created
+	•	Firmware version is displayed correctly
+	•	Hardware version is displayed correctly
+	•	UI updates correctly with backend/mock data
+	•	Screen renders without UI issues
+	•	Developer testing with mock data is successful
+
+⸻
+
+Tasks (1 SP / 1 Day Each)
+
+Task 1 — Create Device Information UI Panel
+	•	Panel layout created
+	•	UI components placed correctly
+
+⸻
+
+Task 2 — Add Firmware Version Display Fields
+	•	Firmware version field visible
+	•	Value can be updated dynamically
+
+⸻
+
+Task 3 — Add Hardware Version Display Fields
+	•	Hardware version field visible
+	•	Correct formatting applied
+
+⸻
+
+Task 4 — GUI Mock Data Developer Testing
+	•	Mock data displayed correctly
+	•	UI rendering validated
+
