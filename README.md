@@ -100,3 +100,50 @@ Acceptance Criteria
 	•	Failed re-authentication keeps the user on the inactivity screen and shows an appropriate error state
 	•	Screen transitions occur without broken layout, flicker, or invalid UI state
 	•	Navigation between Login Screen, Main Application state, and Inactivity Screen is controlled by application state and not by manual unrestricted page switching
+
+
+
+
+	
+
+
+
+
+
+
+
+
+
+Description
+
+This story handles the post-upgrade UI state validation and screen transition flow after firmware upgrade execution.
+
+Once the upgrade process completes, the system:
+	•	resets and reloads the updated firmware version data
+	•	re-evaluates the version against compatibility rules and matrix
+	•	determines which boards have been successfully upgraded
+	•	updates the internal upgrade state accordingly
+
+Based on this evaluation:
+	•	the UI transitions to the appropriate success / partial / failure state
+	•	the upgrade progress screen reflects the final status
+	•	if inactivity occurs after completion, the system transitions to inactivity (lock) screen
+	•	upon re-authentication, the UI resumes with the correct post-upgrade state
+
+This ensures that UI state is always aligned with actual system upgrade results and rule validation.
+
+⸻
+
+Acceptance Criteria
+	•	After upgrade completion, the system re-reads updated firmware versions from the device or data source
+	•	Compatibility rules and matrix are re-evaluated using the updated version data
+	•	The system correctly identifies upgrade status per board (success / pending / failed)
+	•	Upgrade progress screen reflects the final evaluated state without requiring manual refresh
+	•	UI transitions automatically to the correct result state (e.g., success summary or error indication)
+	•	If inactivity timeout occurs after upgrade, the application transitions to the inactivity (lock) screen
+	•	During inactivity state, upgrade results remain preserved and are not lost
+	•	After successful login from inactivity screen, the UI restores the correct post-upgrade state
+	•	No inconsistent state is shown between backend evaluation and UI display
+	•	Screen transitions occur smoothly without incorrect intermediate states
+
+
