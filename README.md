@@ -60,3 +60,43 @@ Acceptance Criteria
 	•	UI reflects access changes immediately after login
 	•	No unauthorized interaction is possible through UI
 	•	UI remains consistent across all screens
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Story: GUI – Login Screen & In-activity Screen Transition
+
+Description
+
+Implement the GUI flow and state transition between the Login Screen and the Inactivity / Session Lock Screen.
+
+This story covers:
+	•	displaying the login screen as the secured entry point
+	•	moving the user into the main application after successful authentication
+	•	detecting inactivity-triggered lock state
+	•	transitioning from the active application state to the inactivity screen
+	•	returning from inactivity screen back to the application after successful re-authentication
+
+This story is limited to screen behavior and state transitions only. It does not cover credential validation logic, role permission mapping, or backend authentication implementation.
+
+Acceptance Criteria
+	•	Login screen is displayed before the user can access the main application
+	•	Successful authentication transitions the user from Login Screen to the main application screen
+	•	When configured inactivity timeout is reached, the application transitions to the Inactivity / Session Lock Screen
+	•	While the inactivity screen is active, the user cannot access the main application without re-authentication
+	•	Successful re-authentication from the inactivity screen returns the user to the previous application state or defined landing state
+	•	Failed re-authentication keeps the user on the inactivity screen and shows an appropriate error state
+	•	Screen transitions occur without broken layout, flicker, or invalid UI state
+	•	Navigation between Login Screen, Main Application state, and Inactivity Screen is controlled by application state and not by manual unrestricted page switching
