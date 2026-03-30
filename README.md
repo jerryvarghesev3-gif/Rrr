@@ -1,2 +1,1 @@
-👉
-Output: Compatibility matrix JSON schema is created as a reviewable file; device/board identification and firmware versions are retrieved and displayed in the correct format via console/UI; JSON parsing is validated through log/print statements; and version comparison results (Compatible / Not Compatible) are printed in logs. Screenshots and execution/demo output serve as proof of implementation.
+
