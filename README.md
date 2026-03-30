@@ -1,1 +1,1 @@
-
+A structured workflow state design document is created for the Launcher Core Framework, defining all core firmware upgrade states and their transitions, including state mapping and execution flow alignment. This document is used as the reference for workflow controller implementation, ensuring consistent and scalable state management across the launcher.
