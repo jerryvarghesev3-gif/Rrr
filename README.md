@@ -10,3 +10,25 @@ Please let me know if you would like me to refine or adjust anything further.
 
 Thanks,  
 Jerry
+
+
+
+
+
+
+
+
+
+Hi Utkarsh,
+
+As discussed, I’m scheduling a quick call to align on the output deliverables and finalize the approach.
+
+This will help ensure we are aligned on expectations and next steps before proceeding further.
+
+Please let me know if the scheduled time works for you.
+
+Regards,  
+Jerry
+
+
+
