@@ -32,3 +32,23 @@ Jerry
 
 
 
+
+
+
+
+
+
+
+
+
+
+Hi Vincent,
+
+Apologies for missing the meeting earlier due to a laptop issue.
+
+I’ve scheduled a call for tomorrow at the same time. Please let me know if this works for you, or feel free to suggest a more convenient time.
+
+Thanks for your understanding.
+
+Regards,  
+Jerry
