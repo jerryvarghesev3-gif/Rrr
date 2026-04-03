@@ -29,3 +29,25 @@ Happy to share my CV.
 Best regards,  
 Jerry
 
+
+
+
+
+
+
+
+
+"}
+Hi Marie,
+
+I came across your profile while exploring opportunities at MilDef.
+
+I’m a Senior Embedded Software Engineer with 9+ years of experience in C/C++ and Embedded Linux, currently working at Baxter in India.
+
+Given MilDef’s focus on advanced embedded systems, I would really appreciate any guidance on relevant opportunities or connecting with the right teams.
+
+Happy to share my CV.
+
+Best regards,  
+Jer
+
