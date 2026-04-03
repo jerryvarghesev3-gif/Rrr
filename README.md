@@ -51,3 +51,11 @@ Happy to share my CV.
 Best regards,  
 Jer
 
+
+
+
+
+
+
+
+Hi Marie, I’m a Senior Embedded Software Engineer exploring opportunities at MilDef. Would love to connect and learn more.
