@@ -30,3 +30,17 @@ I bring diverse experience across industries including medical devices, automoti
 I am passionate about building robust, scalable embedded systems and contributing to innovative technologies that make real-world impact.
 
 #EmbeddedSystems #EmbeddedSoftware #Firmware #EmbeddedLinux #Cplusplus
+
+
+
+
+
+
+
+
+
+
+
+
+Senior Embedded Software Engineer | C/C++ | Embedded Linux | Device Drivers | Firmware | 9+ Years Experience
+
