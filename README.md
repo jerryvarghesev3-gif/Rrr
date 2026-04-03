@@ -10,3 +10,22 @@ Happy to share my CV.
 
 Best regards,  
 Jerry
+
+
+
+
+
+
+Hi Sandra,
+
+I came across your profile while exploring opportunities at MilDef.
+
+I’m a Senior Embedded Software Engineer with 9+ years of experience in C/C++ and Embedded Linux, currently working at Baxter in India.
+
+Given your role in HR leadership at MilDef, I would really appreciate any guidance on relevant opportunities or connecting with the right hiring teams.
+
+Happy to share my CV.
+
+Best regards,  
+Jerry
+
