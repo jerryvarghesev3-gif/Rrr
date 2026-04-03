@@ -65,3 +65,30 @@ Happy to share my CV or discuss further.
 
 Best regards,  
 Jerry Varghese
+
+
+
+
+
+
+
+
+
+
+
+
+
+Hi Sofie,
+
+I came across your profile while exploring opportunities in Sweden.
+
+I’m a Senior Embedded Software Engineer with 9+ years of experience in C/C++, Embedded Linux, and system-level development, currently working at Baxter in India.
+
+I understand you work closely with matching candidates to opportunities, so I wanted to reach out as I’m actively exploring roles in Sweden and open to relocation.
+
+I would appreciate if you could keep my profile in mind for relevant embedded/software roles.
+
+Happy to share my CV or discuss further.
+
+Best regards,  
+Jerry Varghese
