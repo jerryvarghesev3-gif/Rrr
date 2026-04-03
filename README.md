@@ -1,1 +1,12 @@
+Hi Anastasiia,
 
+I came across your profile while exploring opportunities at GlobalLogic Sweden.
+
+I’m a Senior Embedded Software Engineer with 9+ years of experience in C/C++ and Embedded Linux, currently working at Baxter in India. I have strong experience working close to hardware and collaborating with cross-functional teams.
+
+I’m actively exploring opportunities in Europe and open to relocation (Sweden in particular). I would really appreciate if you could consider my profile for relevant roles within your team.
+
+Happy to share my CV or discuss further.
+
+Best regards,
+Jerry Varghese
