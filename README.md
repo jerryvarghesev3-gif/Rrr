@@ -11,3 +11,26 @@ Happy to share my CV and discuss further.
 Best regards,
 Jerry
 
+
+
+
+
+
+
+
+
+
+
+
+Hi Fruzsina,
+
+I came across your profile and was impressed by your experience in IT recruitment at Crayon, especially your work with international hiring.
+
+I’m a Senior Embedded Software Engineer with 9+ years of experience in C/C++, Embedded Linux, and Qt, currently exploring opportunities across Europe.
+
+Given your background in hiring technical talent, I wanted to ask if you’re currently working on any relevant roles or could guide me toward suitable opportunities within your network.
+
+Happy to share my CV and discuss further.
+
+Best regards,
+Jerry
