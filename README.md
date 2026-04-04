@@ -34,3 +34,25 @@ Happy to share my CV and discuss further.
 
 Best regards,
 Jerry
+
+
+
+
+
+
+
+
+Hi Nikolay,
+
+I came across your profile and noticed your strong background in IT recruitment at Brightman.
+
+I’m a Senior Embedded Software Engineer with 9+ years of experience in C/C++, Embedded Linux, and Qt, currently exploring opportunities across Europe, particularly in Germany.
+
+Given your experience working with technical roles, I wanted to ask if you’re currently hiring for similar positions or could guide me toward relevant opportunities.
+
+Happy to share my CV and discuss further.
+
+Best regards,
+Jerry
+
+
