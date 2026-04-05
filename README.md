@@ -9,3 +9,23 @@ Happy to share my CV if relevant.
 
 Best regards,  
 Jerr
+
+
+
+
+
+
+
+
+Hi Anna,
+
+I came across your profile and noticed your work at Zurich Instruments — really impressive.
+
+I’m currently exploring opportunities in embedded/software engineering and would love to connect and learn if there might be a suitable fit within your team.
+
+Also, my wife is a Business Analyst exploring opportunities in Switzerland.
+
+I’d really appreciate any guidance you can share.
+
+Thank you in advance!
+
