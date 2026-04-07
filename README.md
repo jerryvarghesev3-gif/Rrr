@@ -15,6 +15,17 @@ Jerr
 
 
 
+Based on our testing, the application is working as expected. We have also validated the results with our testing team.
+
+As per Bryan, the 1.7.0 tag build was created by Jason prior to submission to Agile. However, he noted that in his build environment, assertions are occurring on the bedside during debug build configuration, which is likely the cause of the crashes.
+
+We will investigate this further and provide a finalized report after completing the analysis.
+
+
+
+
+
+
 
 
 Hi Anna,
