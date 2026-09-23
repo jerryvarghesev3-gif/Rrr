@@ -1,124 +1,561 @@
-JERRY VARGHESE
+Now we have the architecture clearly defined. Your existing Service Tool architecture can become the foundation rather than creating a completely separate simulator.
 
-SENIOR EMBEDDED SOFTWARE ENGINEER
+The key difference is:
 
-C/C++ | Embedded Linux | Qt/QML | Android/JNI | IoT & Connectivity | Medical & Industrial Systems
+Normal mode: BAS → extract → transfer firmware to physical bed.
+Simulation mode: BAS → extract → load into virtual device model → execute simulated RPCA/API behavior.
 
-India | +91 85xxxxx | jerrxxxx@gmail.com
+1. Existing architecture
+
+From what you’re describing:
+
+Kotlin Service Tool
+        │
+        ▼
+       JNI
+        │
+        ▼
+       API
+        │
+        ▼
+    RPCA Method
+        │
+        ▼
+   Physical Board
+        │
+        ▼
+    Centrella Bed
+
+
+    For example:
+
+    Kotlin
+  │
+  │ upgradeFirmware()
+  ▼
+JNI
+  │
+  ▼
+Native API
+  │
+  ▼
+RPCA
+  │
+  ▼
+Physical Bed
+
+
+
+2. New Simulation Mode
+
+We introduce a mode switch at the native/service layer:
+
+                  Kotlin
+                    │
+                    ▼
+                   JNI
+                    │
+                    ▼
+              Service API
+                    │
+             ┌──────┴──────┐
+             │             │
+         REAL MODE     SIMULATION MODE
+             │             │
+          RPCA          Simulator
+             │             │
+       Physical Bed    Virtual Bed
+
+
+
+       This is important because Kotlin doesn’t need to know all the simulation details.
+
+       The Kotlin layer can simply say:
+
+       Simulation = ON
+
+
+       and the native layer routes the operation appropriately.
+
+      3. BAS loading happens in Kotlin
+
+Yes.
+
+The user could do:
+
+
+Service Tool
+     │
+     ▼
+Firmware Upgrade
+     │
+     ▼
+Select BAS
+     │
+     ▼
+Download/Documents
+     │
+     ▼
+Centrella_xxx.bas
+
+In normal mode:
+
+BAS
+ ↓
+Extract
+ ↓
+Find required firmware
+ ↓
+Transfer to physical board
+ ↓
+Upgrade
+
+In simulation mode:
+
+BAS
+ ↓
+Extract
+ ↓
+Analyze package
+ ↓
+Create virtual board state
+ ↓
+Load firmware/configuration
+     into simulator model
+ ↓
+Simulation ready
+
+We don’t transfer anything to the physical bed.
+
+That’s the key difference.
 
 ⸻
 
-PROFESSIONAL SUMMARY
+4. But “extract” and “execute” are two different things
 
-Senior Embedded Software Engineer with 9+ years of experience developing and supporting embedded products across medical, industrial and connected-device domains. Strong hands-on expertise in C/C++, Embedded Linux, Qt/QML, Android/Kotlin/JNI, STM32 and NXP i.MX platforms, with practical experience spanning firmware, device communication, servicing tools, remote connectivity and product troubleshooting.
+This is something we should design carefully.
 
-Experienced in taking features from investigation and proof-of-concept through implementation, debugging and product integration. Currently focused on smart patient-support systems, service automation, MQTT connectivity, product reliability and new embedded concepts.
+Suppose BAS contains:
 
-⸻
+acb.bin
+atlas.bin
+dcb.bin
+hfb.bin
+mcb.bin
+scr.bin
+...
 
-CORE TECHNICAL SKILLS
+The simulator first does:
 
-Languages:
-C, C++11/14/17, Kotlin, Python, Bash, JavaScript, XML, JSON
+BAS
+ ↓
+Extraction
+ ↓
+Package Manager
+ ↓
+Board artifacts
 
-Embedded / Operating Systems:
-Embedded Linux, Android/AOSP, RTOS concepts, Yocto/BSP, Firmware Development
+Then:
 
-Frameworks:
-Qt, Qt/QML, Android Framework, JNI, Embedded Software Architecture
+acb.bin     → ACB simulation model
+atlas.bin   → ATLAS simulation model
+dcb.bin     → DCB simulation model
+...
 
-Connectivity / IPC:
-MQTT, DBus, SOME/IP, RPC/RPCA, Server-Client, CAN, SPI, I2C, UART, SFTP
 
-MCU / Platforms:
-STM32F4, STM32G4, STM32H7, NXP i.MX6
+We should not assume that simply loading the .bin means we’re executing the firmware.
 
-Build / Development:
-CMake, Make, Git, Linux/Debian, Windows
+For POC-1, we can use the binaries as firmware/package identity and configuration inputs, while the simulator implements the board behavior.
 
-Engineering Tools:
-Qt Creator, Visual Studio, VS Code, Android Studio, Keil, Squish, Eclipse
-
-Engineering Areas:
-Firmware Debugging, Field Issue Resolution, Service Tooling, OTA/Update Workflows, POC/R&D, Product Maintenance
-
-⸻
-
-PROFESSIONAL EXPERIENCE
-
-BAXTER INTERNATIONAL — R&D Centre, Bangalore
-
-Senior Embedded Software Engineer | April 2024 – Present
-
-* Develop embedded firmware for smart beds and patient-support systems, contributing to product features, reliability and maintenance.
-* Investigate and resolve field issues including remote-connectivity failures, firmware crashes and malfunctioning features, contributing to root-cause analysis, design reviews and corrective solutions.
-* Perform technical research and proof-of-concept development for product evolution, including gesture-based motion/control, voice-activated functionality, bed-angle management and patient-safety concepts.
-* Develop product servicing and maintenance tools to improve service-engineer efficiency, including Qt/C++ desktop tools and Android-based service applications for different product categories.
-* Build manual-input and automated servicing workflows that reduce repetitive service activities and support faster, more consistent product maintenance.
-* Work with remote-service and connectivity concepts using MQTT on NXP i.MX-based platforms for service operations and product/bed data.
-* Collaborate across engineering and service stakeholders to translate field problems and product requirements into implementable embedded/software solutions.
-* Submitted 6 patent ideas, with 2 progressing to filed concepts related to security and runtime connectivity-failure handling.
+Later we can investigate actually executing/emulating selected firmware.
 
 ⸻
 
-WABTEC CORPORATION
+5. Your RPCA idea fits beautifully
 
-Embedded Engineer | April 2023 – April 2024
+   Suppose the existing service operation is:
 
-* Worked on embedded software engineering for industrial/transportation systems, contributing to development, debugging and maintenance activities.
-* Applied C/C++ and embedded development practices to investigate software issues and support reliable product behaviour.
-* Worked with embedded communication interfaces and software components in a hardware-connected product environment.
-* Supported issue analysis, implementation and integration activities across the embedded software lifecycle.
+   Kotlin
+   ↓
+JNI
+   ↓
+API
+   ↓
+RPCA
+   ↓
+Physical Board
 
-⸻
+We can introduce:
 
-SELECTED ENGINEERING STRENGTHS
+Kotlin
+   ↓
+JNI
+   ↓
+API
+   ↓
+RPCA Interface
+   ↓
+┌───────────────────────┐
+│                       │
+▼                       ▼
+Real RPCA           Simulation RPCA
+│                       │
+▼                       ▼
+Physical board      Virtual board
 
-Service Tool Engineering
 
-Developed Desktop Qt/C++ and Android/Kotlin/JNI tools for product maintenance, diagnostics, configuration and servicing.
+So if the Service Tool invokes:
 
-Automated Servicing
+getBedStatus()
 
-Developed desktop-based automated service workflows designed to improve service efficiency and reduce manual intervention.
 
-Remote Service & Connectivity
+the application doesn’t need to care whether it is:
+REAL
 
-Worked on MQTT-based connectivity and service features for NXP i.MX platforms, including product/bed data handling.
+or:
 
-Embedded Debugging
+SIMULATION
 
-Practical troubleshooting of firmware crashes, communication failures, feature malfunctions and field issues.
-
-Product R&D
-
-Rapid POC development for new product concepts, feature feasibility and product evolution.
-
-⸻
-
-PATENTS & INNOVATION
-
-* 6 patent ideas submitted, with 2 filed concepts highlighted around security mechanisms and runtime connectivity-failure handling.
-* AI-Assisted Runtime Stability & Optimisation Framework — concept/innovation work.
-* AI-Assisted Hardware Health Monitoring Framework — concept/innovation work.
-* Dynamic Security Password System using scanner and serial-number-based mechanisms — concept/innovation work.
-
-⸻
-
-EDUCATION
-
-Bachelor of Technology / Engineering – Electronics & Communication Engineering
-Mahatma Gandhi University, Kerala
+The backend provides the appropriate response.
 
 ⸻
 
-TARGET ROLES
+6. Example: Firmware Upgrade
 
-Senior Embedded Software Engineer
-Senior Embedded C/C++ Engineer
-Embedded Linux Engineer
-Embedded IoT / Connectivity Engineer
-Qt/QML Embedded Engineer
-Android/JNI Embedded Engineer
-Firmware Engineer
-Embedded Systems Engineer
+   Real mode
+
+   Kotlin
+  │
+  │ Select BAS
+  ▼
+Extract BAS
+  │
+  ▼
+Find board firmware
+  │
+  ▼
+JNI
+  │
+  ▼
+API
+  │
+  ▼
+RPCA
+  │
+  ▼
+Physical board
+  │
+  ▼
+Firmware transferred
+
+
+Simulation mode
+
+Kotlin
+  │
+  │ Select BAS
+  ▼
+Extract BAS
+  │
+  ▼
+Identify board firmware
+  │
+  ▼
+Simulation Manager
+  │
+  ├── ACB version = X
+  ├── ATLAS version = Y
+  ├── DCB version = Z
+  ├── SOM version = A
+  └── etc.
+  │
+  ▼
+Virtual Centrella
+
+
+The simulator can then report:
+
+Firmware Package
+────────────────────────
+
+ACB       1.2.4     ✓ Loaded
+ATLAS     3.1.2     ✓ Loaded
+DCB       2.4.1     ✓ Loaded
+HFB       1.7.0     ✓ Loaded
+MCB       2.1.5     ✓ Loaded
+SOM       4.3.2     ✓ Loaded
+
+Simulation Environment
+────────────────────────
+
+✓ Package Valid
+✓ All required boards present
+✓ Version compatibility OK
+
+SIMULATION READY
+
+7. Then each Service Tool feature can be simulated
+
+   For example:
+
+                   Kotlin
+                   │
+                  JNI
+                   │
+               Native API
+                   │
+             Simulation API
+                   │
+      ┌────────────┼────────────┐
+      │            │            │
+    RPCA         CAN          SOM
+   Model        Model         Model
+      │            │            │
+      └────────────┼────────────┘
+                   │
+             Virtual Bed
+
+
+   Features could include:
+
+   Firmware Upgrade
+Device Information
+Configuration
+Calibration
+Diagnostics
+Board Status
+CAN Operations
+SOM Operations
+Wi-Fi configuration
+MQTT configuration
+DeviceBridge
+
+
+Each feature can have a corresponding simulation implementation.
+
+⸻
+
+8. This is where your existing RPCA architecture helps
+
+   You don’t want:
+
+   Kotlin
+ ├── Real firmware implementation
+ ├── Simulation firmware implementation
+ ├── Real configuration
+ ├── Simulation configuration
+ ├── Real diagnostics
+ └── Simulation diagnostics
+
+
+
+That would become messy.
+
+Instead:
+Kotlin
+    │
+    ▼
+JNI
+    │
+    ▼
+Common API
+    │
+    ▼
+RPCA abstraction
+    │
+    ├──────────────┐
+    │              │
+ REAL backend   SIM backend
+    │              │
+    ▼              ▼
+Physical       Virtual
+Centrella      Centrella
+
+
+The API contract stays common.
+
+That’s a major architectural advantage.
+
+9. I would also add a Simulation State Database
+
+    Once BAS is loaded:
+
+   Simulation State
+
+Product:
+Centrella
+
+BAS:
+1.47.305
+
+ACB:
+1.2.4
+
+ATLAS:
+3.1.2
+
+DCB:
+2.4.1
+
+SOM:
+4.3.2
+
+Wi-Fi:
+Connected
+
+MQTT:
+Connected
+
+DeviceBridge:
+Disconnected
+
+Battery:
+85%
+
+Bed Height:
+45 cm
+
+Head:
+30°
+
+Foot:
+15°
+
+Then each RPCA simulation method modifies or reads this state.
+
+For example:
+
+RPCA_GET_BED_STATUS()
+        ↓
+Simulation State
+        ↓
+return:
+height = 45
+head = 30
+foot = 15
+
+10. And eventually the simulator can become a virtual bed
+
+initially:
+
+    Kotlin
+ ↓
+Simulation State
+ ↓
+Logs
+
+
+Then:
+
+Kotlin
+ ↓
+Simulation State
+ ↓
+2D bed visualization
+
+
+Then eventually:
+
+Kotlin
+ ↓
+Simulation State
+ ↓
+3D Centrella
+
+
+
+So 3D isn’t required for the first POC.
+
+⸻
+
+11. This also gives you the second simulation path later
+
+You mentioned:
+
+If we don’t have BAS, whatever we build with Submodule we can simulate.
+
+Exactly.
+
+We can eventually have:
+
+                 Simulation Manager
+                        │
+              ┌─────────┴──────────┐
+              │                    │
+          BAS Adapter          Build Adapter
+              │                    │
+         Existing BAS        Genesis/SomApp
+              │                    │
+              └─────────┬──────────┘
+                        ▼
+                 Simulation API
+                        │
+                        ▼
+                 Virtual Centrella
+
+
+
+  So BAS is the first input source, while a Genesis/SomApp simulation build becomes the second input source later.
+
+⸻
+
+I would define your POC now as this
+
+Centrella Service Tool – BAS-Based Bed Simulation
+
+Input:
+
+Centrella BAS package
+
+Processing:
+
+Kotlin
+ ↓
+BAS selection
+ ↓
+BAS extraction
+ ↓
+BAS validation
+ ↓
+Board/package identification
+ ↓
+Simulation state creation
+
+Execution:
+
+Service API
+ ↓
+JNI
+ ↓
+RPCA abstraction
+ ↓
+Simulation backend
+ ↓
+Virtual Centrella
+
+No physical bed required.
+
+And importantly, we’re not trying to emulate the entire Centrella hardware on day one. We’re creating a virtual representation capable of responding to the Service Tool’s existing API/RPCA operations.
+
+That makes the POC much more achievable.
+
+The first technical milestone I’d target
+
+Select BAS
+     ↓
+Extract successfully
+     ↓
+Read manifest
+     ↓
+Identify all board binaries
+     ↓
+Create simulation session
+     ↓
+Invoke ONE existing RPCA feature
+     ↓
+Receive simulated response
+     ↓
+Display result in Kotlin
+
+If we can demonstrate one real Service Tool feature going from Kotlin → JNI → API → RPCA abstraction → simulated board → response, you’ve proven the core architecture. Then we can systematically add the other features.
+
